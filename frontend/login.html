@@ -1,0 +1,53 @@
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport"
+          content="width=device-width, initial-scale=1.0">
+
+    <title>Login | Partner Matching Agent</title>
+
+    <link rel="stylesheet" href="/assets/css/style.css">
+
+    <script
+      src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"
+      defer></script>
+
+    <script src="/assets/js/api.js" defer></script>
+    <script src="/assets/js/auth.js" defer></script>
+</head>
+
+<body>
+
+<header class="top">
+    <div class="brand">Partner Matching Agent</div>
+</header>
+
+<main class="login-container">
+    <section class="box login-card">
+
+        <h1>Welcome to Partner Matching</h1>
+
+        <p class="muted">
+            Sign in to register your innovations,
+            manage research documents, and review
+            AI-generated invention profiles.
+        </p>
+
+        <button id="googleLogin" class="btn primary">
+            Continue with Google
+        </button>
+
+        <p id="loginError" class="error" role="alert"></p>
+
+        <p class="muted footnote">
+            New users are registered automatically.
+            No separate signup required.
+        </p>
+
+    </section>
+</main>
+
+</body>
+</html>

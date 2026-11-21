@@ -1,35 +1,30 @@
 
 import logging
-import httpx
+from pathlib import Path
 
+import httpx
 from fastapi import FastAPI, HTTPException
-from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import FileResponse
+from fastapi.staticfiles import StaticFiles
 
 from app.config import SUPABASE_URL, SUPABASE_KEY
 
 
-# Initialize FastAPI
 app = FastAPI(
     title="AI Industry Partner Matching Agent",
-    description="Backend API for the Innovator Module",
-    version="0.1.0"
+    version="0.2.0"
+)
+
+ROOT_DIR = Path(__file__).resolve().parents[2]
+FRONTEND_DIR = ROOT_DIR / "frontend"
+
+app.mount(
+    "/assets",
+    StaticFiles(directory=FRONTEND_DIR),
+    name="assets"
 )
 
 
-# CORS configuration
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=[
-        "http://localhost:5500",
-        "http://127.0.0.1:5500"
-    ],
-    allow_credentials=True,
-    allow_methods=["GET", "POST", "PUT", "PATCH"],
-    allow_headers=["*"]
-)
-
-
-# Home endpoint
 @app.get("/")
 def home():
     return {
@@ -38,27 +33,37 @@ def home():
     }
 
 
-# FastAPI health check
-@app.get("/api/health")
-def health():
+@app.get("/login", include_in_schema=False)
+def login_page():
+    return FileResponse(FRONTEND_DIR / "login.html")
+
+
+@app.get("/dashboard", include_in_schema=False)
+def dashboard():
+    return FileResponse(FRONTEND_DIR / "index.html")
+
+
+@app.get("/api/config/public")
+def public_config():
     return {
-        "status": "ok",
-        "service": "FastAPI"
+        "url": SUPABASE_URL,
+        "publishableKey": SUPABASE_KEY
     }
 
 
-# Supabase connection health check
+@app.get("/api/health")
+def health():
+    return {"status": "ok"}
+
+
 @app.get("/api/health/database")
 def database_health():
     try:
         response = httpx.get(
             f"{SUPABASE_URL.rstrip('/')}/auth/v1/health",
-            headers={
-                "apikey": SUPABASE_KEY
-            },
+            headers={"apikey": SUPABASE_KEY},
             timeout=10
         )
-
         response.raise_for_status()
 
         return {
@@ -69,7 +74,6 @@ def database_health():
 
     except httpx.HTTPError as exc:
         logging.exception("Supabase health check failed")
-
         raise HTTPException(
             status_code=503,
             detail="Supabase connection failed"

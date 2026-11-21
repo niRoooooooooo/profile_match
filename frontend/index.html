@@ -1,0 +1,73 @@
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport"
+          content="width=device-width, initial-scale=1.0">
+
+    <title>Innovator Dashboard</title>
+
+    <link rel="stylesheet" href="/assets/css/style.css">
+
+    <script
+      src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"
+      defer></script>
+
+    <script src="/assets/js/api.js" defer></script>
+    <script src="/assets/js/dashboard.js" defer></script>
+</head>
+
+<body>
+
+<header class="top">
+    <div class="brand">Partner Matching Agent</div>
+    <button class="btn" id="logoutButton">Sign out</button>
+</header>
+
+<div class="app">
+
+    <aside class="sidebar">
+        <div class="role-card">
+            <strong>Innovator</strong>
+            <p id="accountName">Loading...</p>
+        </div>
+
+        <nav>
+            <a href="/dashboard" class="nav-active">Home</a>
+            <span class="nav-disabled">Register invention</span>
+            <span class="nav-disabled">Help & glossary</span>
+        </nav>
+    </aside>
+
+    <main class="content">
+
+        <h1 id="welcomeTitle">Innovator Dashboard</h1>
+
+        <p class="muted">
+            Manage your inventions and AI-generated profiles.
+        </p>
+
+        <section class="box dashboard-section">
+
+            <div class="section-heading">
+                <h2>My inventions</h2>
+
+                <button class="btn primary" disabled>
+                    + Register invention
+                </button>
+            </div>
+
+            <div id="inventionList">
+                <p class="muted">Loading...</p>
+            </div>
+
+        </section>
+
+        <p class="error" id="dashboardError" role="alert"></p>
+
+    </main>
+</div>
+
+</body>
+</html>
