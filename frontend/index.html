@@ -6,7 +6,7 @@
     <meta name="viewport"
           content="width=device-width, initial-scale=1.0">
 
-    <title>Innovator Dashboard</title>
+    <title>Innovator Dashboard | Profile Match</title>
 
     <link rel="stylesheet" href="/assets/css/style.css">
 
@@ -15,6 +15,8 @@
       defer></script>
 
     <script src="/assets/js/api.js" defer></script>
+    <script src="/assets/js/upload.js" defer></script>
+    <script src="/assets/js/register.js" defer></script>
     <script src="/assets/js/dashboard.js" defer></script>
 </head>
 
@@ -22,7 +24,9 @@
 
 <header class="top">
     <div class="brand">Partner Matching Agent</div>
-    <button class="btn" id="logoutButton">Sign out</button>
+    <button class="btn" id="logoutButton" type="button">
+        Sign out
+    </button>
 </header>
 
 <div class="app">
@@ -30,41 +34,276 @@
     <aside class="sidebar">
         <div class="role-card">
             <strong>Innovator</strong>
-            <p id="accountName">Loading...</p>
+            <p id="accountName" class="muted">Loading...</p>
         </div>
 
-        <nav>
-            <a href="/dashboard" class="nav-active">Home</a>
-            <span class="nav-disabled">Register invention</span>
-            <span class="nav-disabled">Help & glossary</span>
+        <nav class="side-nav">
+            <button type="button"
+                    data-view="dashboard"
+                    class="nav-active">
+                Home
+            </button>
+
+            <button type="button" data-view="register">
+                Register invention
+            </button>
         </nav>
     </aside>
 
     <main class="content">
 
-        <h1 id="welcomeTitle">Innovator Dashboard</h1>
+        <p id="dashboardError"
+           class="error"
+           role="alert"></p>
 
-        <p class="muted">
-            Manage your inventions and AI-generated profiles.
-        </p>
+        <p id="dashboardNotice"
+           class="notice"
+           role="status"
+           hidden></p>
 
-        <section class="box dashboard-section">
+        <!-- PERSONAL DASHBOARD -->
 
-            <div class="section-heading">
-                <h2>My inventions</h2>
+        <section id="dashboardView">
 
-                <button class="btn primary" disabled>
-                    + Register invention
-                </button>
+            <h1 id="welcomeTitle">
+                Innovator Dashboard
+            </h1>
+
+            <p class="muted">
+                Manage your inventions, documents,
+                and future AI-generated profiles.
+            </p>
+
+            <div class="box dashboard-section">
+
+                <div class="section-heading">
+                    <h2>My inventions</h2>
+
+                    <button type="button"
+                            class="btn primary"
+                            data-view="register">
+                        + Register invention
+                    </button>
+                </div>
+
+                <div id="inventionList">
+                    <p class="muted">
+                        Loading your inventions...
+                    </p>
+                </div>
+
             </div>
-
-            <div id="inventionList">
-                <p class="muted">Loading...</p>
-            </div>
-
         </section>
 
-        <p class="error" id="dashboardError" role="alert"></p>
+
+        <!-- INVENTION REGISTRATION -->
+
+        <section id="registerView" hidden>
+
+            <h1>Register an invention</h1>
+
+            <p class="muted">
+                Provide information about your invention
+                and upload its supporting documents.
+                The AI Profiling Agent will analyze these
+                documents in the next development phase.
+            </p>
+
+            <form id="registrationForm" class="box">
+
+                <h2>Invention details</h2>
+
+                <label class="field">
+                    Invention title *
+                    <input type="text"
+                           name="title"
+                           maxlength="200"
+                           required
+                           placeholder="Enter invention title">
+                </label>
+
+                <label class="field">
+                    Short abstract *
+                    <textarea name="abstract"
+                              rows="5"
+                              required
+                              placeholder="Describe the problem, solution, and technology"></textarea>
+                </label>
+
+                <div class="form-grid">
+
+                    <label class="field">
+                        Technology domain *
+                        <input type="text"
+                               name="domain"
+                               required
+                               placeholder="e.g. Environmental Engineering">
+                    </label>
+
+                    <label class="field">
+                        Technology Readiness Level
+                        <select name="trl">
+                            <option value="">Not specified</option>
+                            <option value="1">TRL 1</option>
+                            <option value="2">TRL 2</option>
+                            <option value="3">TRL 3</option>
+                            <option value="4">TRL 4</option>
+                            <option value="5">TRL 5</option>
+                            <option value="6">TRL 6</option>
+                            <option value="7">TRL 7</option>
+                            <option value="8">TRL 8</option>
+                            <option value="9">TRL 9</option>
+                        </select>
+                    </label>
+
+                    <label class="field">
+                        Intellectual property status
+                        <select name="ip_status">
+                            <option value="Not specified">
+                                Not specified
+                            </option>
+                            <option value="No filing yet">
+                                No filing yet
+                            </option>
+                            <option value="Patent pending">
+                                Patent pending
+                            </option>
+                            <option value="Patent granted">
+                                Patent granted
+                            </option>
+                        </select>
+                    </label>
+
+                    <label class="field">
+                        Inventors
+                        <input type="text"
+                               name="inventors"
+                               placeholder="Names separated by commas">
+                    </label>
+
+                </div>
+
+                <label class="field">
+                    Keywords
+                    <input type="text"
+                           name="keywords"
+                           placeholder="e.g. clean water, filtration, membrane">
+                </label>
+
+                <h2>Confidentiality</h2>
+
+                <div class="privacy-options">
+                    <label>
+                        <input type="radio"
+                               name="confidentiality"
+                               value="public">
+                        Public
+                    </label>
+
+                    <label>
+                        <input type="radio"
+                               name="confidentiality"
+                               value="restricted"
+                               checked>
+                        Restricted
+                    </label>
+
+                    <label>
+                        <input type="radio"
+                               name="confidentiality"
+                               value="confidential">
+                        Confidential
+                    </label>
+                </div>
+
+                <p class="muted small-text">
+                    All uploaded documents remain private
+                    regardless of the selected confidentiality
+                    level. Public sharing is not implemented yet.
+                </p>
+
+                <h2>Supporting documents</h2>
+
+                <label class="field">
+                    Upload PDF or Word documents *
+                    <input type="file"
+                           id="inventionFiles"
+                           accept=".pdf,.doc,.docx"
+                           multiple
+                           required>
+                </label>
+
+                <p class="muted small-text">
+                    Maximum 5 files per upload.
+                    Maximum 20 MB per file.
+                    Accepted: PDF, DOCX, DOC.
+                </p>
+
+                <p id="registrationMessage"
+                   role="status"></p>
+
+                <div class="form-actions">
+                    <button type="submit"
+                            class="btn primary"
+                            id="registrationSubmit">
+                        Register invention & upload
+                    </button>
+
+                    <button type="button"
+                            class="btn"
+                            data-view="dashboard">
+                        Cancel
+                    </button>
+                </div>
+
+            </form>
+        </section>
+
+
+        <!-- ADD MORE DOCUMENTS TO AN EXISTING INVENTION -->
+
+        <section id="attachView" hidden>
+
+            <h1>Add supporting documents</h1>
+
+            <p class="muted" id="attachTitle"></p>
+
+            <form id="uploadMoreForm" class="box">
+
+                <label class="field">
+                    Select additional documents
+                    <input type="file"
+                           id="additionalFiles"
+                           accept=".pdf,.doc,.docx"
+                           multiple
+                           required>
+                </label>
+
+                <p class="muted small-text">
+                    Maximum 5 files per upload,
+                    20 MB per file.
+                </p>
+
+                <p id="uploadMoreMessage"
+                   role="status"></p>
+
+                <div class="form-actions">
+                    <button type="submit"
+                            id="uploadMoreSubmit"
+                            class="btn primary">
+                        Upload documents
+                    </button>
+
+                    <button type="button"
+                            class="btn"
+                            data-view="dashboard">
+                        Back to dashboard
+                    </button>
+                </div>
+
+            </form>
+
+        </section>
 
     </main>
 </div>

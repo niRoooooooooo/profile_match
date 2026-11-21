@@ -168,3 +168,212 @@ body {
         padding: 20px;
     }
 }
+
+
+/* ==================================
+   PHASE 3 — INVENTION REGISTRATION
+   ================================== */
+
+[hidden] {
+    display: none !important;
+}
+
+.side-nav button {
+    display: block;
+    width: 100%;
+    text-align: left;
+    padding: 12px;
+    margin-bottom: 4px;
+    border: none;
+    border-radius: 8px;
+    background: transparent;
+    color: var(--text);
+    font: inherit;
+    cursor: pointer;
+}
+
+.side-nav button:hover {
+    background: var(--primary-light);
+}
+
+.side-nav .nav-active {
+    background: var(--primary-light);
+    color: var(--primary);
+    font-weight: 600;
+}
+
+.field {
+    display: block;
+    margin: 18px 0;
+    font-weight: 600;
+}
+
+.field input,
+.field textarea,
+.field select {
+    display: block;
+    width: 100%;
+    padding: 12px;
+    margin-top: 7px;
+    border: 1px solid #b9c1d6;
+    border-radius: 8px;
+    background: var(--card);
+    color: var(--text);
+    font: inherit;
+    font-weight: 400;
+}
+
+.field textarea {
+    min-height: 120px;
+    resize: vertical;
+}
+
+.field input[type="file"] {
+    border: 1px dashed #b9c1d6;
+    padding: 18px;
+}
+
+.form-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 0 20px;
+}
+
+.privacy-options {
+    display: flex;
+    gap: 20px;
+    flex-wrap: wrap;
+    margin: 16px 0;
+}
+
+.privacy-options label {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-weight: 400;
+}
+
+.form-actions {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 10px;
+    margin-top: 22px;
+}
+
+.small-text {
+    font-size: 13px;
+    line-height: 1.6;
+}
+
+.empty-state {
+    text-align: center;
+    padding: 45px 15px;
+}
+
+.empty-state h3 {
+    margin-bottom: 8px;
+}
+
+.empty-state .btn {
+    margin-top: 12px;
+}
+
+.invention-card {
+    padding: 22px 0;
+    border-top: 1px solid var(--line);
+}
+
+.invention-card:first-child {
+    margin-top: 20px;
+}
+
+.invention-card h3 {
+    margin: 0 0 8px;
+    font-size: 17px;
+}
+
+.status-badge {
+    display: inline-block;
+    padding: 4px 12px;
+    background: var(--primary-light);
+    color: var(--primary);
+    border-radius: 20px;
+    font-size: 12px;
+    font-weight: 600;
+    text-transform: capitalize;
+}
+
+.document-list {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+}
+
+.document-list .btn {
+    max-width: 100%;
+    overflow-wrap: anywhere;
+    text-align: left;
+    font-size: 13px;
+}
+
+.small-button {
+    padding: 8px 12px;
+}
+
+.notice {
+    padding: 12px 16px;
+    margin: 15px 0;
+    border-radius: 8px;
+    font-size: 14px;
+}
+
+.notice-success {
+    background: #e5f4ea;
+    color: #146b39;
+}
+
+.notice-warning {
+    background: #fff0d2;
+    color: #805300;
+}
+
+#registrationMessage,
+#uploadMoreMessage {
+    font-size: 14px;
+    margin-top: 16px;
+}
+
+@media (max-width: 760px) {
+    .form-grid {
+        grid-template-columns: 1fr;
+    }
+
+    .privacy-options {
+        flex-direction: column;
+        gap: 12px;
+    }
+
+    .form-actions {
+        align-items: stretch;
+    }
+}
+
+
+/* Delete invention button */
+
+.btn-danger {
+    color: #b42318;
+    border: 1px solid #efb6b1;
+    background: #ffffff;
+}
+
+.btn-danger:hover:not(:disabled) {
+    background: #fff1f0;
+    border-color: #b42318;
+}
+
+.btn-danger:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
