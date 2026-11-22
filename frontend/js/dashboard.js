@@ -1,4 +1,3 @@
-
 /*
 ===============================================
 PROFILE MATCH — INNOVATOR DASHBOARD
@@ -138,6 +137,20 @@ function makeButton(label, callback) {
     button.addEventListener("click", callback);
 
     return button;
+}
+
+
+// ========================================
+// PHASE 4: OPEN THIS INVENTION'S AI REPORT
+// ========================================
+
+function openInventionReport(invention) {
+    // The report page checks the user's Google session
+    // and loads only the requested, owned invention.
+    const inventionId = encodeURIComponent(invention.id);
+    window.location.assign(
+        `/assets/invention_report.html?invention_id=${inventionId}`
+    );
 }
 
 
@@ -527,6 +540,33 @@ window.refreshInventions = async function () {
         throw docsError;
     }
 
+    // ----------------------------------------
+    // PHASE 4: READ OWN SAVED AI REPORT DRAFTS
+    // ----------------------------------------
+    // This is read-only and respects Supabase RLS.
+    // The browser cannot directly modify agent output.
+    const {
+        data: aiDraftRows,
+        error: aiDraftError
+    } = await client
+        .from("invention_profile_drafts")
+        .select("invention_id,edited_data,generation_number")
+        .in("invention_id", inventionIds);
+
+    if (aiDraftError) {
+        throw new Error(
+            "Could not load invention AI report status: " +
+            aiDraftError.message
+        );
+    }
+
+    const aiDraftByInvention = new Map(
+        (aiDraftRows || []).map(item => [
+            item.invention_id,
+            item
+        ])
+    );
+
     // Group documents by invention.
     const docsByInvention = new Map();
 
@@ -637,6 +677,57 @@ window.refreshInventions = async function () {
 
 
         // ========================================
+        // PHASE 4: AI REPORT FOR THIS INVENTION
+        // ========================================
+
+        const aiDraft = aiDraftByInvention.get(invention.id);
+        const aiReportSection = document.createElement("section");
+        aiReportSection.className = "box";
+        aiReportSection.style.marginTop = "14px";
+        aiReportSection.style.padding = "14px";
+        aiReportSection.style.border = "1px solid #dce3eb";
+        aiReportSection.style.borderRadius = "8px";
+
+        const aiHeading = document.createElement("h4");
+        aiHeading.textContent = "AI-generated invention report";
+        aiHeading.style.margin = "0 0 8px";
+        aiReportSection.appendChild(aiHeading);
+
+        const aiInfo = document.createElement("p");
+        aiInfo.className = "muted small-text";
+
+        if (aiDraft) {
+            const summary = aiDraft.edited_data
+                ?.identity?.concise_summary?.value;
+            aiInfo.textContent = summary
+                ? summary.slice(0, 260) +
+                    (summary.length > 260 ? "…" : "")
+                : "Draft saved. Open the report to review and edit it.";
+        } else {
+            aiInfo.textContent =
+                "No AI report yet. Generate one from this " +
+                "invention's supporting documents.";
+        }
+
+        aiReportSection.appendChild(aiInfo);
+
+        const aiStatus = document.createElement("p");
+        aiStatus.className = "muted small-text";
+        aiStatus.textContent = aiDraft
+            ? `Saved AI draft · Generation ${aiDraft.generation_number}`
+            : "Not generated";
+        aiReportSection.appendChild(aiStatus);
+
+        const openReportButton = makeButton(
+            aiDraft ? "View / Edit / Submit AI report" : "Generate AI report",
+            () => openInventionReport(invention)
+        );
+        if (!aiDraft) {
+            openReportButton.classList.add("primary");
+        }
+        aiReportSection.appendChild(openReportButton);
+
+        // ========================================
         // 13. INVENTION ACTIONS
         // ========================================
 
@@ -712,6 +803,7 @@ window.refreshInventions = async function () {
             privacy,
             fileHeading,
             fileList,
+            aiReportSection,
             actions
         );
 

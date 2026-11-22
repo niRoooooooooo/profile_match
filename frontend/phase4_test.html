@@ -1,0 +1,375 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Invention Reports | Profile Match</title>
+  <script defer src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
+  <script defer src="/assets/js/api.js"></script>
+  <style>
+    :root { color-scheme: light; --ink:#17243b; --muted:#5a6577; --blue:#175cd3; --line:#dce3eb; --pale:#f5f7fb; --white:#fff; --positive:#146c43; }
+    * { box-sizing: border-box; }
+    body { font-family: Arial, Helvetica, sans-serif; margin:0; background:var(--pale); color:var(--ink); line-height:1.5; }
+    header { background:#fff; border-bottom:1px solid var(--line); padding:22px max(22px, calc((100vw - 1260px)/2)); }
+    header h1 { font-size:23px; margin:0 0 4px; }
+    header p { margin:0; color:var(--muted); font-size:14px; }
+    .wrap { max-width:1260px; margin:28px auto; padding:0 22px; display:grid; grid-template-columns:310px minmax(0,1fr); gap:22px; align-items:start; }
+    .panel { background:#fff; border:1px solid var(--line); border-radius:10px; padding:20px; }
+    h2 { font-size:18px; margin:0 0 12px; }
+    h3 { font-size:16px; margin:0 0 10px; }
+    .small { font-size:13px; color:var(--muted); }
+    .side-head { display:flex; align-items:center; justify-content:space-between; gap:8px; margin-bottom:14px; }
+    .invention-list { display:grid; gap:10px; }
+    .invention-item { border:1px solid var(--line); background:#fff; border-radius:8px; padding:13px; width:100%; text-align:left; color:var(--ink); cursor:pointer; }
+    .invention-item:focus-visible, button:focus-visible, textarea:focus-visible, input:focus-visible { outline:3px solid #a8cafb; outline-offset:2px; }
+    .invention-item.active { border-color:var(--blue); background:#eef4ff; }
+    .invention-item strong { display:block; margin-bottom:4px; font-size:14px; }
+    .tag { font-size:11px; display:inline-block; border:1px solid #d1d9e6; border-radius:999px; padding:2px 8px; margin-top:8px; color:#41516a; background:#f8fafd; }
+    .tag.filled { background:#e9f5ee; color:var(--positive); border-color:#bce3c9; }
+    .toolbar { display:flex; align-items:center; flex-wrap:wrap; gap:10px; margin:16px 0; }
+    button { font:inherit; font-size:14px; font-weight:600; padding:10px 14px; border-radius:6px; border:1px solid transparent; background:var(--blue); color:#fff; cursor:pointer; }
+    button.secondary { background:#fff; color:var(--blue); border-color:#c6d6ee; }
+    button.quiet { background:#fff; color:#4d596b; border-color:var(--line); }
+    button:disabled { opacity:.5; cursor:not-allowed; }
+    .status { border:1px solid var(--line); border-radius:7px; padding:10px 12px; background:#f9fbfe; font-size:13px; margin:12px 0; }
+    .status.error { color:#9a2b2b; border-color:#f0c9c9; background:#fff8f8; }
+    .status.ok { color:#17623d; border-color:#b9dfc7; background:#f1faf5; }
+    .meta { display:flex; flex-wrap:wrap; gap:14px; color:var(--muted); font-size:13px; }
+    .section { border:1px solid var(--line); border-radius:8px; margin-top:16px; padding:16px; }
+    .section h3 { margin-top:0; padding-bottom:8px; border-bottom:1px solid var(--line); }
+    .field { margin:14px 0; }
+    .field-label { display:block; font-size:13px; font-weight:700; margin-bottom:6px; }
+    textarea, input[type=text], input[type=number] { width:100%; font:inherit; font-size:14px; line-height:1.45; border:1px solid #cbd5e1; border-radius:6px; padding:10px; background:#fff; color:var(--ink); }
+    textarea { resize:vertical; min-height:74px; }
+    .evidence { background:#f7f9fc; border-left:3px solid #90b4e8; padding:9px 12px; margin-top:8px; color:#49576a; font-size:12px; }
+    .evidence strong { display:block; }
+    .item-card { border:1px solid #e2e7ef; border-radius:7px; padding:12px; margin:10px 0; }
+    .subsection { margin-top:17px; }
+    .subsection h4 { font-size:14px; margin:0 0 8px; }
+    .note { color:#715a1c; background:#fffaf0; border:1px solid #efe1b7; padding:10px 12px; border-radius:7px; font-size:13px; }
+    details { margin:12px 0; }
+    summary { cursor:pointer; font-weight:600; }
+    pre { overflow:auto; overflow-wrap:anywhere; white-space:pre-wrap; font-size:12px; background:#f7f9fc; padding:10px; border-radius:5px; }
+    .empty { min-height:130px; display:flex; flex-direction:column; justify-content:center; gap:6px; color:var(--muted); }
+    [hidden] { display:none !important; }
+    @media(max-width:850px) { .wrap { grid-template-columns:1fr; } header { padding:18px 22px; } }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>Invention Reports</h1>
+    <p>Generate an AI profile for each of your inventions. Review, edit and save your draft before submitting.</p>
+  </header>
+  <main class="wrap">
+    <aside class="panel">
+      <div class="side-head"><h2 style="margin:0">My inventions</h2><button class="quiet" id="refreshBtn" type="button">Refresh</button></div>
+      <p class="small">Each invention has its own documents and AI report.</p>
+      <div class="invention-list" id="inventionList" aria-live="polite">Loading inventions...</div>
+    </aside>
+    <section class="panel" id="workArea">
+      <h2 id="reportTitle">Choose an invention</h2>
+      <p class="small" id="reportSub">Select one of your registered inventions on the left.</p>
+      <div id="status" class="status" role="status" aria-live="polite">Sign in with Google through your existing Profile Match login.</div>
+      <div class="meta" id="metadata"></div>
+      <div class="toolbar" id="actions" hidden>
+        <button id="generateBtn" type="button">Generate AI Report</button>
+        <button class="secondary" id="regenerateBtn" type="button" hidden>Generate Again</button>
+        <button class="secondary" id="parseBtn" type="button">Check Documents</button>
+        <button id="submitBtn" type="button" hidden>Submit Report</button>
+      </div>
+      <div id="editor" hidden>
+        <div class="note">This report is AI-assisted and may contain mistakes. Check the original documents. When you change a claim, its previous AI evidence is cleared and the edit is marked as an unverified innovator statement. Saving edits does not rerun Qwen.</div>
+        <div id="profileSections"></div>
+      </div>
+      <details id="diagnostics" hidden>
+        <summary>Document coverage and processing warnings</summary>
+        <div id="diagnosticContent"></div>
+      </details>
+      <div class="small" id="submissionInfo"></div>
+      <div id="submissions" hidden><h3>Previously submitted reports</h3><div id="submissionList"></div></div>
+    </section>
+  </main>
+  <script>
+    window.addEventListener('DOMContentLoaded', () => {
+      const $ = id => document.getElementById(id);
+      const list = $('inventionList');
+      const sections = $('profileSections');
+      let supabaseClient = null;
+      let session = null;
+      let inventions = [];
+      let draftLookup = new Map();
+      let selected = null;
+      let draft = null;
+      let workingProfile = null;
+      let editCounter = 0;
+      let savedCounter = 0;
+      let saveTimer = null;
+      let isSaving = false;
+      let busy = false;
+      let saveBlocked = false;
+
+      const labels = {
+        identity: 'Invention overview', problem_solution: 'Problem and solution',
+        technology: 'Technology and components', applications: 'Applications and industries',
+        development: 'Prototype and validation', readiness: 'Technology readiness',
+        intellectual_property: 'Intellectual property', commercialization: 'Commercialization',
+        partner_requirements: 'Required partner capabilities', gaps: 'Research gaps and next steps'
+      };
+      const readOnlySections = new Set(['document_relevance','discrepancies','quality_warnings']);
+      function pretty(key) { return key.replaceAll('_',' ').replace(/\b\w/g, c => c.toUpperCase()); }
+      function elem(tag, cls, text) { const e=document.createElement(tag); if(cls)e.className=cls; if(text!==undefined)e.textContent=text; return e; }
+      function status(message, kind='') { const e=$('status');e.textContent=message;e.className='status'+(kind?' '+kind:''); }
+      function busyState(value) {
+        busy=value;
+        for(const id of ['generateBtn','regenerateBtn','parseBtn','submitBtn','refreshBtn'])$(id).disabled=value;
+      }
+      async function api(method, endpoint, body) {
+        const {data,error}=await supabaseClient.auth.getSession();
+        if(error||!data.session)throw new Error('Session expired. Please log in again.');
+        const response=await fetch(endpoint,{method,headers:{'Authorization':`Bearer ${data.session.access_token}`,...(body===undefined?{}:{'Content-Type':'application/json'})},...(body===undefined?{}:{body:JSON.stringify(body)})});
+        let payload={};try{payload=await response.json();}catch{}
+        if(!response.ok){const msg=typeof payload.detail==='string'?payload.detail:JSON.stringify(payload.detail||{});const err=new Error(`HTTP ${response.status}: ${msg}`);err.status=response.status;throw err;}
+        return payload;
+      }
+      function buttonVisibility() {
+        const hasInvention=Boolean(selected);
+        $('actions').hidden=!hasInvention;
+        $('generateBtn').hidden=!hasInvention||Boolean(draft);
+        $('regenerateBtn').hidden=!draft;
+        $('submitBtn').hidden=!draft;
+        $('editor').hidden=!draft;
+        $('diagnostics').hidden=!draft;
+      }
+      function labelForInvention(inv) { return inv.title || 'Untitled invention'; }
+      function renderInventions() {
+        list.replaceChildren();
+        if(!inventions.length){list.append(elem('p','small','No registered inventions found. Register an invention in your dashboard first.'));return;}
+        for(const inv of inventions){
+          const button=elem('button','invention-item'+(selected?.id===inv.id?' active':''));
+          button.type='button';button.append(elem('strong','',labelForInvention(inv)));
+          button.append(elem('span','small',inv.domain||'Domain not specified'));
+          const tag=elem('span','tag'+(draftLookup.has(inv.id)?' filled':''),draftLookup.has(inv.id)?'Draft saved':'No AI draft');
+          button.append(document.createElement('br'),tag);
+          button.addEventListener('click',()=>choose(inv));list.append(button);
+        }
+      }
+      async function loadAll() {
+        if(busy){status('Finish the current report operation before refreshing.');return;}
+        if(editCounter>savedCounter && !(await ensureSaved())){status('Unsaved changes remain. Resolve the save error before refreshing.','error');return;}
+        status('Loading your registered inventions...');
+        try {
+          supabaseClient=await window.getSupabase();
+          const {data:{session:s},error:authErr}=await supabaseClient.auth.getSession();
+          if(authErr||!s)throw new Error('Please log in through Google first.');
+          session=s;
+          const [{data:rows,error:inventionErr},{data:drafts,error:draftsErr}]=await Promise.all([
+            supabaseClient.from('inventions').select('id,title,abstract,domain,confidentiality,status,created_at').order('created_at',{ascending:false}),
+            supabaseClient.from('invention_profile_drafts').select('invention_id,generation_number,updated_at')
+          ]);
+          if(inventionErr)throw inventionErr;
+          if(draftsErr)throw draftsErr;
+          inventions=rows||[];
+          draftLookup=new Map((drafts||[]).map(d=>[d.invention_id,d]));
+          renderInventions();
+          status(`Loaded ${inventions.length} invention${inventions.length===1?'':'s'}. Select one to view its AI report.`,'ok');
+          if(selected){const next=inventions.find(i=>i.id===selected.id);if(next)await choose(next);else clearSelection();}
+        }catch(e){status(e.message,'error');list.replaceChildren(elem('p','small','Could not load inventions. Check login and permissions.'));}
+      }
+      function clearSelection(){selected=null;draft=null;workingProfile=null;$('reportTitle').textContent='Choose an invention';$('reportSub').textContent='';sections.replaceChildren();buttonVisibility();}
+      async function choose(inv) {
+        if(busy){status('Finish the current report operation before switching inventions.');return;}
+        if(selected?.id!==inv.id && editCounter>savedCounter){
+          status('Save is still pending. Wait for “All edits saved” before switching inventions.','error');return;
+        }
+        selected=inv;draft=null;workingProfile=null;saveBlocked=false;editCounter=0;savedCounter=0;
+        $('reportTitle').textContent=labelForInvention(inv);
+        $('reportSub').textContent=[inv.domain,inv.confidentiality?`Confidentiality: ${inv.confidentiality}`:null].filter(Boolean).join(' · ');
+        $('submissionInfo').textContent='';$('submissions').hidden=true;$('submissionList').replaceChildren();sections.replaceChildren();buttonVisibility();renderInventions();
+        status('Checking for an existing draft...');
+        try {
+          const result=await api('GET',`/api/inventions/${inv.id}/profile/draft`);
+          if(selected?.id!==inv.id)return;
+          draft=result.draft;
+          if(draft){workingProfile=structuredClone(draft.edited_data);status('Saved draft loaded. You can edit it below; Qwen has not been run.','ok');renderEditor();}
+          else status('No AI report yet. Click Generate AI Report to analyze this invention’s documents.');
+          buttonVisibility();void loadSubmissions();
+        }catch(e){status(e.message,'error');}
+      }
+      async function loadSubmissions(){
+        if(!selected)return;const id=selected.id;
+        try{
+          const out=await api('GET',`/api/inventions/${id}/profile/submissions`);
+          if(selected?.id!==id)return;
+          const container=$('submissionList');container.replaceChildren();
+          const submissions=out.submissions||[];$('submissions').hidden=!submissions.length;
+          for(const submissionId of submissions){
+            const card=elem('div','item-card');card.append(elem('strong','',submissionId));
+            card.append(elem('div','small','Innovator-submitted · Not management-verified'));
+            for(const ext of ['docx','json']){
+              const btn=elem('button','secondary',`Download ${ext.toUpperCase()}`);btn.style.margin='8px 8px 0 0';btn.type='button';
+              btn.addEventListener('click',()=>void downloadSubmission(id,submissionId,ext));card.append(btn);
+            }container.append(card);
+          }
+        }catch(e){if(e.status!==404)$('submissionInfo').textContent='Unable to load previous submissions: '+e.message;}
+      }
+      async function downloadSubmission(inventionId,submissionId,ext){
+        try{
+          const {data,error}=await supabaseClient.auth.getSession();if(error||!data.session)throw new Error('Please log in again.');
+          const res=await fetch(`/api/inventions/${inventionId}/profile/submissions/${encodeURIComponent(submissionId)}/${ext}`,{headers:{Authorization:`Bearer ${data.session.access_token}`}});
+          if(!res.ok)throw new Error(`Download failed (HTTP ${res.status}).`);
+          const blob=await res.blob();const url=URL.createObjectURL(blob);
+          const link=document.createElement('a');link.href=url;link.download=`invention-report-${submissionId}.${ext}`;document.body.append(link);link.click();link.remove();
+          setTimeout(()=>URL.revokeObjectURL(url),5000);
+        }catch(e){status(e.message,'error');}
+      }
+      function markDirty() {
+        editCounter++;
+        status('Unsaved edits — autosaving...');
+        clearTimeout(saveTimer);
+        saveTimer=setTimeout(()=>{void autosave();},850);
+      }
+      function makeClaimEditor(claim, fieldName) {
+        const outer=elem('div','field');
+        const lbl=elem('label','field-label',pretty(fieldName));
+        const input=elem('textarea');input.rows=(String(claim.value||'').length>140?4:2);
+        input.value=claim.value??'';input.setAttribute('aria-label',pretty(fieldName));
+        input.addEventListener('input',()=>{
+          const changed=input.value.trim();
+          claim.value=changed||null;
+          claim.classification=changed?'inference':'missing';
+          claim.evidence=[];
+          claim.explanation=changed?'Innovator-edited statement; not independently verified against source documents.':'Information not supplied.';
+          while(notes.firstChild)notes.removeChild(notes.firstChild);
+          notes.append(elem('span','small','Edited by innovator · Previous AI citation cleared'));
+          markDirty();
+        });
+        outer.append(lbl,input);
+        const notes=elem('div');
+        notes.append(elem('span','small',`AI classification: ${pretty(claim.classification||'unknown')}`));
+        if(Array.isArray(claim.evidence)){
+          for(const ev of claim.evidence){
+            const card=elem('div','evidence');
+            card.append(elem('strong','',`${ev.source_file||'Source'}${ev.page!=null?' · Page '+ev.page:''}${ev.section?' · '+ev.section:''}`));
+            if(ev.excerpt)card.append(elem('div','',ev.excerpt));
+            notes.append(card);
+          }
+        }
+        outer.append(notes);return outer;
+      }
+      function isClaim(value){return value && typeof value==='object' && !Array.isArray(value) && 'classification' in value && 'value' in value;}
+      function makeGenericField(value,key,parent) {
+        if(isClaim(value)){parent.append(makeClaimEditor(value,key));return;}
+        if(Array.isArray(value)){
+          const group=elem('div','subsection');group.append(elem('h4','',pretty(key)));
+          if(value.every(isClaim)){
+            value.forEach((entry,index)=>{const card=elem('div','item-card');card.append(makeClaimEditor(entry,`Item ${index+1}`));group.append(card);});
+            const add=elem('button','secondary','Add item');add.type='button';
+            add.addEventListener('click',()=>{
+              const claim={value:null,classification:'missing',evidence:[],explanation:'Added by innovator; awaiting information.'};
+              value.push(claim);const card=elem('div','item-card');card.append(makeClaimEditor(claim,`Item ${value.length}`));group.insertBefore(card,add);markDirty();
+            });
+            group.append(add);
+          } else if(value.every(v=>typeof v==='string')){
+            const ta=elem('textarea');ta.value=value.join('\n');ta.rows=Math.max(3,Math.min(8,value.length+1));ta.setAttribute('aria-label',pretty(key));
+            ta.addEventListener('input',()=>{
+              const lines=ta.value.split('\n').map(x=>x.trim()).filter(Boolean);
+              const container=parent.__profileSection;
+              container[key]=lines;markDirty();
+            });group.append(ta);
+          } else {
+            for(const entry of value){const p=elem('div','item-card');p.append(elem('pre','',JSON.stringify(entry,null,2)));group.append(p);}
+          }
+          parent.append(group);return;
+        }
+        if(value && typeof value==='object'){
+          const outer=elem('div','subsection');outer.__profileSection=value;outer.append(elem('h4','',pretty(key)));
+          for(const [childKey,childValue] of Object.entries(value))makeGenericField(childValue,childKey,outer);
+          parent.append(outer);return;
+        }
+        if(typeof value==='string'||typeof value==='number'||value===null){
+          const row=elem('div','field');row.append(elem('label','field-label',pretty(key)));
+          const input=elem('input');input.type=typeof value==='number'?'number':'text';input.value=value??'';input.setAttribute('aria-label',pretty(key));
+          input.addEventListener('input',()=>{
+            const s=input.value.trim();parent.__profileSection[key]=typeof value==='number'?(s===''?null:Number(s)):(s||null);markDirty();
+          });row.append(input);parent.append(row);
+        }
+      }
+      function renderEditor(){
+        sections.replaceChildren();if(!workingProfile)return;
+        for(const [key,value] of Object.entries(workingProfile)){
+          if(readOnlySections.has(key)||key==='missing_information')continue;
+          const wrapper=elem('section','section');wrapper.__profileSection=workingProfile;wrapper.append(elem('h3','',labels[key]||pretty(key)));
+          if(value && typeof value==='object'&&!Array.isArray(value)&&!isClaim(value)){
+            wrapper.__profileSection=value;
+            for(const [fieldName,fieldValue] of Object.entries(value))makeGenericField(fieldValue,fieldName,wrapper);
+          }else makeGenericField(value,key,wrapper);
+          sections.append(wrapper);
+        }
+        const meta=$('diagnosticContent');meta.replaceChildren();
+        const rel=workingProfile.document_relevance||[];
+        for(const item of rel){const p=elem('div','item-card');p.append(elem('strong','',`${item.filename||'Document'} — ${item.relevance||'unknown'}`));p.append(elem('p','small',item.explanation||''));meta.append(p);}
+        for(const warning of workingProfile.quality_warnings||[])meta.append(elem('p','small','• '+warning));
+      }
+      async function autosave(){
+        if(isSaving||busy||saveBlocked||!draft||!selected)return;
+        if(editCounter===savedCounter)return;
+        isSaving=true;const before=editCounter;
+        const snapshot=structuredClone(workingProfile);
+        try{
+          const result=await api('PUT',`/api/inventions/${selected.id}/profile/draft`,{edited_data:snapshot,expected_updated_at:draft.updated_at});
+          draft=result.draft;savedCounter=before;draftLookup.set(selected.id,{updated_at:draft.updated_at,generation_number:draft.generation_number});renderInventions();
+          status(editCounter===savedCounter?'All edits saved to Supabase.':'New edits detected — autosaving again.','ok');
+        }catch(e){saveBlocked=true;status('Save failed: '+e.message+' Your unsaved text remains visible. Do not refresh until resolved.','error');}
+        finally{isSaving=false;if(!saveBlocked&&editCounter>savedCounter)setTimeout(()=>void autosave(),200);}
+      }
+      async function ensureSaved(){
+        clearTimeout(saveTimer);
+        if(isSaving){status('Autosave is finishing. Try again in a moment.');return false;}
+        if(editCounter>savedCounter)await autosave();
+        return !isSaving&&!saveBlocked&&editCounter===savedCounter;
+      }
+      async function generate(regenerate){
+        if(!selected||busy)return;
+        if(regenerate){if(!(await ensureSaved()))return;if(!window.confirm('Generate Again will replace your current editable draft, including all saved corrections. Previous submitted reports are not affected. Continue?'))return;}
+        busyState(true);status('Local Qwen is analyzing this invention’s uploaded documents. Do not close this page while generation is running.');
+        try{
+          const endpoint=`/api/inventions/${selected.id}/profile/${regenerate?'regenerate':'generate'}`;
+          const result=await api('POST',endpoint,regenerate?{expected_updated_at:draft.updated_at}:undefined);
+          draft=result.draft;workingProfile=structuredClone(draft.edited_data);editCounter=0;savedCounter=0;saveBlocked=false;
+          draftLookup.set(selected.id,{updated_at:draft.updated_at,generation_number:draft.generation_number});renderInventions();renderEditor();buttonVisibility();
+          status('AI report generated and saved. Review and edit the sections below.','ok');
+        }catch(e){status(e.message,'error');}
+        finally{busyState(false);}
+      }
+      async function submit(){
+        if(!selected||!draft||busy)return;
+        if(!(await ensureSaved()))return;
+        if(!window.confirm('Submit this report as an innovator-submitted, unverified profile? It will be saved as JSON and DOCX in the private invention-profiles bucket.'))return;
+        busyState(true);status('Submitting the current saved draft...');
+        try{
+          const result=await api('POST',`/api/inventions/${selected.id}/profile/submit`,{expected_updated_at:draft.updated_at});
+          $('submissionInfo').textContent=`Submission saved: ${result.submission_id||'confirmed'} · ${result.status||'innovator_submitted'}.`;
+          status('Your report was submitted to private Storage successfully. It is not management-approved.','ok');void loadSubmissions();
+        }catch(e){
+          if(e.status===404)status('Submission unavailable (HTTP 404): route not installed or access denied. Your editable draft remains saved.','error');
+          else status('Submission failed: '+e.message,'error');
+        }finally{busyState(false);}
+      }
+      async function parse(){
+        if(!selected||busy)return;busyState(true);status('Checking uploaded documents...');
+        try{
+          const result=await api('POST',`/api/inventions/${selected.id}/documents/parse`);
+          const good=result.successful_documents??0, bad=result.failed_documents??0;
+          status(`Document check complete: ${good} readable; ${bad} failed.`,'ok');
+        }catch(e){status(e.message,'error');}finally{busyState(false);}
+      }
+      $('refreshBtn').addEventListener('click',()=>void loadAll());
+      $('generateBtn').addEventListener('click',()=>void generate(false));
+      $('regenerateBtn').addEventListener('click',()=>void generate(true));
+      $('submitBtn').addEventListener('click',()=>void submit());
+      $('parseBtn').addEventListener('click',()=>void parse());
+      buttonVisibility();void loadAll();
+    });
+  </script>
+</body>
+</html>
