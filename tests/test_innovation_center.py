@@ -119,10 +119,20 @@ class StructureAndIsolationTests(unittest.TestCase):
         self.assertIn('<body data-role="innovator">', html)
         self.assertIn('<div id="roleSwitcher"></div>', html)
         self.assertIn('/assets/js/role-switcher.js', html)
-        head = subprocess.run(["git", "show", "HEAD:frontend/index.html"], cwd=ROOT,
-                              capture_output=True, text=True, encoding="utf-8")
-        if head.returncode != 0:
+        # Compare with the last committed version from BEFORE the switcher.
+        log = subprocess.run(["git", "log", "--format=%H", "--", "frontend/index.html"], cwd=ROOT,
+                             capture_output=True, text=True, encoding="utf-8")
+        if log.returncode != 0:
             self.skipTest("git history not available")
+        head = None
+        for commit in log.stdout.split():
+            shown = subprocess.run(["git", "show", f"{commit}:frontend/index.html"], cwd=ROOT,
+                                   capture_output=True, text=True, encoding="utf-8")
+            if shown.returncode == 0 and "roleSwitcher" not in shown.stdout:
+                head = shown
+                break
+        if head is None:
+            self.skipTest("no committed version from before the role switcher")
         stripped = html.replace('    <link rel="stylesheet" href="/assets/css/roles.css">\n', "")
         stripped = stripped.replace(
             "    <!-- Development interface switcher (presentation only; no role change). -->\n"

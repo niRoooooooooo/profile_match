@@ -1,4 +1,5 @@
 
+import re
 from dataclasses import dataclass, field
 from io import BytesIO
 from pathlib import Path
@@ -99,6 +100,92 @@ def parse_document(
     )
 
 
+TABLE_ROWS_HEADING = (
+    "[Table rows from this page, with wrapped cells joined]"
+)
+
+# Layout thresholds in PDF points.
+_COLUMN_GAP = 9.0           # gap between words that separates two table cells
+_LINE_TOLERANCE = 3.0       # words on the same visual line
+_CONTINUATION_INDENT = 18.0 # right of a table's first column = a wrapped line
+
+
+def reconstruct_table_rows(page) -> list[str]:
+    """Rebuild table rows whose cells wrap across lines ("a | b | c").
+
+    Uses word positions only (no table-detection engine). Returns [] when
+    the page has no wrapped table cells, so ordinary pages are unchanged,
+    and on any unexpected layout problem (extraction must never fail here).
+    """
+    try:
+        words = page.get_text("words", sort=True)
+        lines = []
+        for word in sorted(words, key=lambda w: (round(w[1] / _LINE_TOLERANCE), w[0])):
+            if lines and abs(lines[-1]["y"] - word[1]) <= _LINE_TOLERANCE:
+                lines[-1]["words"].append(word)
+            else:
+                lines.append({"y": word[1], "h": word[3] - word[1], "words": [word]})
+        for line in lines:
+            line["words"].sort(key=lambda w: w[0])
+            cells = []
+            for word in line["words"]:
+                if cells and word[0] - cells[-1]["x1"] <= _COLUMN_GAP:
+                    cells[-1]["text"] += " " + word[4]
+                    cells[-1]["x1"] = word[2]
+                else:
+                    cells.append({"x0": word[0], "x1": word[2], "text": word[4]})
+            line["cells"] = cells
+
+        rows, current, left, merged = [], None, None, False
+        for line in lines:
+            cells = line["cells"]
+            # A bullet glyph is not a table column: bullet lists are not tables.
+            bullet = len(cells[0]["text"]) <= 2 and not any(ch.isalnum() for ch in cells[0]["text"])
+            page_furniture = re.search(r"\bpage\s+\d+\b",
+                                       " ".join(c["text"] for c in cells), re.IGNORECASE)
+            continuation = (
+                current is not None and left is not None and not bullet and not page_furniture
+                and cells[0]["x0"] > left + _CONTINUATION_INDENT
+                and line["y"] - current["y"] <= current["h"] * 2.6
+                # same type size: page headers/footers are not wrapped cells
+                and abs(line["h"] - current["h"]) <= current["h"] * 0.2
+            )
+            if continuation:
+                for cell in cells:
+                    target = max(
+                        (c for c in current["cells"] if c["x0"] <= cell["x0"] + 12),
+                        key=lambda c: c["x0"], default=None,
+                    )
+                    if target is None:
+                        continue
+                    joiner = (
+                        "" if target["text"].endswith("-") and cell["text"][:1].islower()
+                        else " "
+                    )
+                    target["text"] += joiner + cell["text"]
+                    merged = True
+                current["y"] = line["y"]
+                continue
+            if current is not None:
+                rows.append(current)
+            if len(cells) >= 2 and not bullet:
+                current = {"y": line["y"], "h": line["h"], "cells": [dict(c) for c in cells]}
+                if left is None or cells[0]["x0"] < left + _CONTINUATION_INDENT:
+                    left = cells[0]["x0"]
+            else:
+                current, left = None, None
+        if current is not None:
+            rows.append(current)
+        if not merged:
+            return []
+        return [
+            " | ".join(c["text"] for c in row["cells"])
+            for row in rows if len(row["cells"]) >= 2
+        ]
+    except Exception:  # noqa: BLE001 - extraction must never fail here
+        return []
+
+
 def parse_pdf(
     file_bytes: bytes,
     filename: str
@@ -148,6 +235,17 @@ def parse_pdf(
                 if not text:
                     empty_pages.append(page_index + 1)
                     continue
+
+                # Tables whose cells wrap onto several lines are read line
+                # by line above, which interleaves neighbouring columns.
+                # Add the rows once more with each cell joined, so the AI
+                # and the citation check see every cell as one passage.
+                table_rows = reconstruct_table_rows(page)
+                if table_rows:
+                    text += (
+                        "\n\n" + TABLE_ROWS_HEADING + "\n"
+                        + "\n".join(table_rows)
+                    )
 
                 remaining = (
                     MAX_CHARACTERS

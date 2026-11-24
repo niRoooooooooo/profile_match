@@ -77,6 +77,8 @@ _QUOTE_TRANSLATION = str.maketrans({
     "“": '"', "”": '"', "„": '"', "‟": '"',
     "‐": "-", "‑": "-", "‒": "-", "–": "-",
     "—": "-", "―": "-", "−": "-", "­": None,
+    # Symbols PDFs and models write in two ways (both sides are normalised).
+    "≥": ">=", "≤": "<=", "×": "x",
 })
 
 
@@ -776,10 +778,19 @@ def walk_claims(value, path="profile"):
 
 
 def _flag_unverified(claim: Claim):
-    """Keep the AI's value for review, but never as a verified fact."""
+    """Keep the AI's value for review, but never as a verified fact.
+
+    The unlocated quote is kept in the explanation (not as a citation) so a
+    reviewer can see what the AI claimed to quote and check the document.
+    """
+    quotes = [" ".join(e.excerpt.split()) for e in claim.evidence if e.excerpt and e.excerpt.strip()]
+    already = (claim.explanation or "").startswith("UNVERIFIED")
     claim.classification = "inference"
     claim.evidence = []
     claim.explanation = _unverified_explanation(claim.explanation)
+    if quotes and not already and "Unlocated quote:" not in claim.explanation:
+        quote = quotes[0][:200] + ("…" if len(quotes[0]) > 200 else "")
+        claim.explanation += f" Unlocated quote: “{quote}”"
 
 
 def _locate_all(evidence_list, source_index):
@@ -951,6 +962,41 @@ def _components_need_refinement(profile: InventionAIProfile) -> bool:
     ):
         return True
     return False
+
+
+# Coded rows of a component/subsystem table, e.g. "RL-10 | Housing | ..." or
+# "RL-10      Housing      IP54 ...". Only used to notice OMITTED components.
+_CODED_ROW = re.compile(
+    r"^\s*([A-Z]{1,5}-\d{1,3})\s*(?:\|\s*|\s{2,})([A-Za-z][^|\n]{1,60}?)\s*(?:\||\s{2,}|$)",
+    re.MULTILINE)
+_COMPONENT_TABLE = re.compile(r"\b(subsystems?|components?)\b", re.IGNORECASE)
+
+
+def table_component_names(source_index: dict) -> list[str]:
+    """Component names from coded component/subsystem tables in the sources."""
+    names: list[str] = []
+    for chunks in source_index.values():
+        for chunk in chunks:
+            if not _COMPONENT_TABLE.search(chunk.text):
+                continue
+            rows = {m.group(1): m.group(2).strip() for m in _CODED_ROW.finditer(chunk.text)}
+            if len(rows) < 3:
+                continue
+            for name in rows.values():
+                if normalize_text(name) not in {normalize_text(n) for n in names}:
+                    names.append(name)
+    return names
+
+
+def missing_table_components(profile: InventionAIProfile, source_index: dict) -> list[str]:
+    """Table rows not represented in technology.components (by name)."""
+    have = [normalize_text(c.value) for c in profile.technology.components if not _missing(c)]
+
+    def covered(name):
+        key = normalize_text(name)
+        return any(key in h or h in key for h in have)
+
+    return [n for n in table_component_names(source_index) if not covered(n)]
 
 
 def _valid_atomic_components(items: list[Claim], source_index: dict) -> list[Claim]:
@@ -1229,7 +1275,9 @@ def repair_key_omissions(
         r"\b(owned|ownership|owner|assignment|assigned|assignee|jointly)\b", source_text
     ):
         needed.append("ownership_claims")
-    if _components_need_refinement(profile):
+    refine_components = _components_need_refinement(profile)
+    table_rows_missing = missing_table_components(profile, source_index)
+    if refine_components or table_rows_missing:
         needed.append("components")
     # Interpretive fields the main request often leaves empty even when the
     # sources support them (observed in live fictional tests).
@@ -1270,6 +1318,8 @@ def repair_key_omissions(
     current_values["components"] = [
         c.value for c in profile.technology.components if not _missing(c)
     ]
+    if table_rows_missing:
+        current_values["component_table_rows_not_yet_listed"] = table_rows_missing
     for name, owner in list_targets.items():
         current_values[name] = [
             c.value for c in getattr(owner, name) if not _missing(c)
@@ -1300,7 +1350,10 @@ CURRENT VALUES (MAY BE SHORT, GROUPED, DUPLICATED OR MISSING):
   per Claim). Use classification=document_fact and a genuine source quote.
   Include ALL distinct explicit parts across relevant documents; do not
   put prototype work, objectives or applications in components. Do not
-  infer a Wi-Fi module when the text merely says Wi-Fi.
+  infer a Wi-Fi module when the text merely says Wi-Fi. If
+  component_table_rows_not_yet_listed is given, those rows of a component
+  table are not yet in the profile: return each one as a component (its
+  table name) with a verbatim quote of that table cell.
 - prototype_status: only what the evidence explicitly reports, including
   the difference between laboratory demo and real-world field validation.
 - patent_status: a disclosed filing statement, NOT proof of legal status;
@@ -1363,8 +1416,13 @@ Unknown information stays null; do not fabricate anything.
     for name in needed:
         if name == "components":
             components = _valid_atomic_components(repair.components, source_index)
-            if components:
-                profile.technology.components = components
+            if components and refine_components:
+                profile.technology.components = components      # bundled list rebuilt
+            elif components:
+                # Only ADD omitted parts; existing verified components stay.
+                have = {normalize_text(c.value) for c in profile.technology.components if not _missing(c)}
+                profile.technology.components += [
+                    c for c in components if normalize_text(c.value) not in have]
             continue
         if name in list_targets:
             destination = getattr(list_targets[name], name)
@@ -1589,8 +1647,12 @@ missing_information instead. suggested_trl is an optional integer estimate.
    commercial status, key limitations). classification=inference; its
    explanation names the supporting files. Introduce no new facts.
    technology.components: one short, distinct hardware/software component
-   name per Claim, each present verbatim in a source. Use cases belong in
-   applications.use_cases, not components.
+   name per Claim, each present verbatim in a source. When a document has a
+   component or subsystem table (e.g. coded rows RL-01 ... RL-12), include
+   EVERY row, including housings/enclosures, inlets, outlets, connectors,
+   power and data parts. Use cases belong in applications.use_cases.
+   technology.techniques: named methods or techniques as written in the
+   sources; a paraphrased technique name is an inference, not document_fact.
    technology.novelty: novelty is the inventors' CLAIM, not an established
    fact. Keep every hedge or qualifier from the source in the value (e.g.
    "To the authors' knowledge, ...", "claimed to be", "we believe"), and
@@ -1633,6 +1695,9 @@ missing_information instead. suggested_trl is an optional integer estimate.
      duration, laboratory vs field conditions, calibration).
    - experimental_results: WHAT was measured - outcomes with values exactly
      as reported, one result per claim, naming the condition if stated.
+     Include calibration and accuracy checks (e.g. deviation from a
+     reference), fault-injection outcomes, endurance and pressure-drop
+     measurements, not only the headline performance figures.
    - methodology details the sources do NOT give (e.g. no sample size, no
      field conditions, no independent replication) go to
      gaps.missing_evidence, never invented.
@@ -1697,6 +1762,9 @@ CITATIONS: every document_fact needs evidence with the exact filename, the
 page/section shown in the [FILE: ... | PAGE: ...] marker, and a short
 excerpt copied VERBATIM (no paraphrase, no merged sentences). Statements
 you cannot quote verbatim must be inference, not document_fact.
+TABLES: a page may end with "[Table rows from this page, with wrapped cells
+joined]": the same table again with each cell on one line ("a | b | c").
+When citing a table cell, quote the text of ONE cell from those rows.
 """.format(
     single_fields=", ".join(SINGLE_CLAIM_PATHS),
     list_fields=", ".join(sorted(LIST_CLAIM_PATHS, key=CLAIM_FIELD_PATHS.index)),
