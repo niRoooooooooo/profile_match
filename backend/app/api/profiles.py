@@ -1,4 +1,6 @@
 
+import logging
+import re
 from typing import Any, Awaitable, Callable
 from uuid import UUID
 
@@ -23,6 +25,74 @@ from app.services.document_processor import (
     DocumentProcessingError,
 )
 
+from app.services.cloud_authorization import (
+    CloudProcessingNotAuthorized,
+)
+from app.services.report_renderer import render_report_json
+from app.services.gemini_client import (
+    GeminiConfigurationError,
+    GeminiError,
+    GeminiQuotaError,
+)
+
+
+logger = logging.getLogger(__name__)
+
+# Defence in depth: these error messages are already credential-free, but
+# anything key- or token-shaped is redacted before logging or display.
+_SECRET_LIKE = re.compile(
+    r"AIza[0-9A-Za-z_\-]{10,}"
+    r"|AQ\.[0-9A-Za-z_\-.]{10,}"
+    r"|sb_(?:secret|publishable)_[0-9A-Za-z_\-]{6,}"
+    r"|eyJ[0-9A-Za-z_\-.]{20,}"
+    r"|Bearer\s+\S+",
+    re.IGNORECASE,
+)
+
+_UNCHANGED = " Your saved draft has not been changed."
+
+# Fixed pipeline messages describing a problem with the input documents.
+_INPUT_PROBLEMS = (
+    "No documents were confidently identified as relevant",
+    "Relevant documents contain no usable text",
+    "No readable documents are available for profiling",
+)
+
+
+def _safe_message(error: Exception, limit: int = 300) -> str:
+    text = " ".join(str(error).split())
+    return _SECRET_LIKE.sub("<redacted>", text)[:limit]
+
+
+def report_for(draft) -> dict | None:
+    """Rendered report for a draft's saved edited_data (additive field).
+
+    Uses the same renderer as the submitted DOCX. A rendering problem never
+    breaks the draft response; it is logged and the report is omitted.
+    """
+    if not isinstance(draft, dict) or not draft.get("edited_data"):
+        return None
+    try:
+        return render_report_json(draft["edited_data"], {
+            "generation_number": draft.get("generation_number"),
+            "updated_at": draft.get("updated_at"),
+        })
+    except Exception as error:  # noqa: BLE001
+        logger.warning("Report rendering failed: %s: %s",
+                       type(error).__name__, _safe_message(error))
+        return None
+
+
+def _log_failure(kind: str, error: Exception) -> None:
+    """One log line: failure kind, exception type and its safe message.
+
+    No traceback, document text, tokens or credentials are logged.
+    """
+    logger.warning(
+        "Profile generation %s: %s: %s",
+        kind, type(error).__name__, _safe_message(error),
+    )
+
 
 router = APIRouter(
     prefix="/api/inventions",
@@ -34,6 +104,16 @@ router = APIRouter(
 # Request schemas
 # --------------------------------------------------
 
+class GenerateProfileRequest(BaseModel):
+    """Optional body; consent defaults to False (generation is then blocked)."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    # Innovator's explicit confirmation that the documents may be sent to
+    # Google's free Gemini API. Not stored in the database.
+    cloud_processing_consent: bool = False
+
+
 class RegenerateProfileRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -41,6 +121,8 @@ class RegenerateProfileRequest(BaseModel):
         min_length=1,
         max_length=100
     )
+
+    cloud_processing_consent: bool = False
 
 
 class SaveProfileDraftRequest(BaseModel):
@@ -154,6 +236,7 @@ async def execute_profile_operation(
         ) from error
 
     except DocumentProcessingError as error:
+        _log_failure("failed (documents)", error)
         raise HTTPException(
             status_code=502,
             detail="Invention document processing failed."
@@ -165,12 +248,65 @@ async def execute_profile_operation(
             detail="Profile storage service unavailable."
         ) from error
 
+    # AI errors are raised before any draft write, so saved data is intact.
+    except CloudProcessingNotAuthorized as error:
+        _log_failure("blocked", error)
+        raise HTTPException(
+            status_code=403,
+            detail=str(error)
+        ) from error
+
+    except GeminiQuotaError as error:
+        _log_failure("failed (quota)", error)
+        raise HTTPException(
+            status_code=429,
+            detail=(
+                "The Gemini free-tier quota is currently exhausted. "
+                "Try again later. Your saved draft has not been changed."
+            )
+        ) from error
+
+    except GeminiConfigurationError as error:
+        _log_failure("failed (configuration)", error)
+        raise HTTPException(
+            status_code=503,
+            detail=(
+                "The AI service is not configured on the server. "
+                "Your saved draft has not been changed."
+            )
+        ) from error
+
+    except GeminiError as error:
+        # Gemini messages contain only codes/statuses, never document text.
+        _log_failure("failed (Gemini)", error)
+        message = _safe_message(error)
+        if "HTTP 503" in message:
+            raise HTTPException(
+                status_code=503,
+                detail=(
+                    "Google Gemini is temporarily overloaded (HTTP 503 after "
+                    "one retry). Try again in a few minutes." + _UNCHANGED
+                )
+            ) from error
+        raise HTTPException(
+            status_code=502,
+            detail=f"AI profile generation failed: {message}" + _UNCHANGED
+        ) from error
+
     except RuntimeError as error:
+        _log_failure("failed", error)
+        message = str(error)
+        if message.startswith(_INPUT_PROBLEMS):
+            raise HTTPException(
+                status_code=422,
+                detail=_safe_message(error) + _UNCHANGED
+            ) from error
+        # Unexpected: keep the generic message; the cause is in the log.
         raise HTTPException(
             status_code=502,
             detail=(
                 "AI profile generation failed. "
-                "Check the local Ollama service."
+                "Your saved draft has not been changed."
             )
         ) from error
 
@@ -191,7 +327,7 @@ async def get_profile_draft(
     """
     Retrieve the existing saved draft.
 
-    Does not run Qwen.
+    Does not run the AI model.
     """
 
     draft = await execute_profile_operation(
@@ -208,7 +344,8 @@ async def get_profile_draft(
             else "draft_available"
         ),
         "invention_id": str(invention_id),
-        "draft": draft
+        "draft": draft,
+        "report": report_for(draft)
     }
 
 
@@ -221,29 +358,35 @@ async def get_profile_draft(
 )
 async def generate_profile_draft(
     invention_id: UUID,
+    body: GenerateProfileRequest | None = None,
     access_token: str = Depends(
         require_access_token
     )
 ):
     """
-    Generate a draft using local Qwen.
+    Generate a draft using Google Gemini (authorized inventions only).
 
+    Requires {"cloud_processing_consent": true} from the consent dialog.
     If a draft already exists, return HTTP 409.
     Do not overwrite existing drafts.
     """
+
+    consent = bool(body and body.cloud_processing_consent)
 
     draft = await execute_profile_operation(
         lambda: ProfileService().generate_draft(
             invention_id=str(invention_id),
             access_token=access_token,
-            regenerate=False
+            regenerate=False,
+            cloud_processing_consent=consent
         )
     )
 
     return {
         "status": "draft_generated",
         "invention_id": str(invention_id),
-        "draft": draft
+        "draft": draft,
+        "report": report_for(draft)
     }
 
 
@@ -275,14 +418,16 @@ async def regenerate_profile_draft(
             regenerate=True,
             expected_updated_at=(
                 body.expected_updated_at
-            )
+            ),
+            cloud_processing_consent=body.cloud_processing_consent
         )
     )
 
     return {
         "status": "draft_regenerated",
         "invention_id": str(invention_id),
-        "draft": draft
+        "draft": draft,
+        "report": report_for(draft)
     }
 
 
@@ -320,5 +465,6 @@ async def save_profile_draft(
     return {
         "status": "draft_saved",
         "invention_id": str(invention_id),
-        "draft": draft
+        "draft": draft,
+        "report": report_for(draft)
     }

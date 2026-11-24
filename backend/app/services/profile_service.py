@@ -347,7 +347,7 @@ class ProfileService:
         access_token: str
     ):
         """
-        Retrieve saved draft without running Qwen.
+        Retrieve saved draft without running the AI model.
         """
 
         invention_id = self._invention_uuid(
@@ -453,12 +453,16 @@ class ProfileService:
         access_token: str,
         *,
         regenerate: bool = False,
-        expected_updated_at: str | None = None
+        expected_updated_at: str | None = None,
+        cloud_processing_consent: bool = False
     ) -> dict:
         """
         Generate only after an explicit API call.
 
         Existing drafts are not automatically replaced.
+        cloud_processing_consent is the innovator's explicit confirmation
+        that the documents may be sent to the free Gemini API; it is only
+        passed through to the Profiling Agent's authorization checks.
         """
 
         invention_id = self._invention_uuid(
@@ -497,10 +501,11 @@ class ProfileService:
                 "generating again."
             )
 
-        # Existing Qwen profiling agent.
+        # Gemini Profiling Agent (raises before any write if blocked).
         result = await generate_invention_profile(
             invention_id,
-            access_token
+            access_token,
+            cloud_processing_consent=cloud_processing_consent
         )
 
         if (
@@ -516,7 +521,7 @@ class ProfileService:
             mode="json"
         )
 
-        # Qwen may take several minutes.
+        # AI generation may take a few minutes.
         # Confirm that the user's session and
         # invention ownership are still valid.
         await self._owner_id(

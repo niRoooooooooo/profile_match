@@ -57,7 +57,7 @@ class Claim(BaseModel):
     )
 
     # FIX: Classification is now REQUIRED.
-    # Qwen must explicitly decide the claim type.
+    # The AI model must explicitly decide the claim type.
     classification: ClaimType = Field(
         ...,
         description=(
@@ -336,8 +336,20 @@ class DocumentRelevance(BaseModel):
 
 class ProfileDiscrepancy(BaseModel):
     field: str
-    registration_value: str
+
+    # Additive (backward compatible): existing drafts have no "kind" and are
+    # read as registration_vs_document. Defaults are plain strings (not
+    # nullable) to keep the Gemini response schema simple.
+    kind: Literal[
+        "registration_vs_document",
+        "between_documents",
+    ] = "registration_vs_document"
+
+    registration_value: str = ""
     document_value: str
+
+    # For between_documents: the conflicting value from the other document.
+    other_document_value: str = ""
 
     evidence: list[Evidence] = Field(
         default_factory=list

@@ -22,6 +22,7 @@ from app.services.document_processor import (
 from app.api.profiles import (
     router as profiles_router
 )
+from app.api.profile_submissions import router as profile_submissions_router
 
 
 app = FastAPI(
@@ -40,6 +41,7 @@ app.mount(
 
 # Register the new invention profiling endpoints.
 app.include_router(profiles_router)
+app.include_router(profile_submissions_router)
 
 
 @app.get("/")

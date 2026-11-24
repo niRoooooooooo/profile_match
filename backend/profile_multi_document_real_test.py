@@ -95,7 +95,7 @@ def show(claim):
     return f"{claim.value} [{claim.classification}]"
 
 
-print("Starting improved Qwen profiling test...", flush=True)
+print("Starting Gemini profiling test (fictional data; live API call)...", flush=True)
 
 try:
     result = build_profile_from_processed(processed)

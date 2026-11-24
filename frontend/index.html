@@ -9,6 +9,7 @@
     <title>Innovator Dashboard | Profile Match</title>
 
     <link rel="stylesheet" href="/assets/css/style.css">
+    <link rel="stylesheet" href="/assets/css/roles.css">
 
     <script
       src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"
@@ -18,12 +19,15 @@
     <script src="/assets/js/upload.js" defer></script>
     <script src="/assets/js/register.js" defer></script>
     <script src="/assets/js/dashboard.js" defer></script>
+    <!-- Development interface switcher (presentation only; no role change). -->
+    <script src="/assets/js/role-switcher.js" defer></script>
 </head>
 
-<body>
+<body data-role="innovator">
 
 <header class="top">
     <div class="brand">Partner Matching Agent</div>
+    <div id="roleSwitcher"></div>
     <button class="btn" id="logoutButton" type="button">
         Sign out
     </button>

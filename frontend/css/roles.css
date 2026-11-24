@@ -1,0 +1,61 @@
+/* Shared styles for the role switcher and role-based pages.
+   Builds on style.css (same colours, top bar and sidebar). No animations. */
+
+/* ---- Role switcher (header) ---- */
+.top .role-switcher { margin-left: auto; margin-right: 12px; position: relative; }
+.role-switcher-button {
+  display: inline-flex; flex-direction: column; align-items: flex-start; gap: 0;
+  font: inherit; line-height: 1.2; cursor: pointer;
+  background: var(--primary-light); color: var(--primary);
+  border: 1px solid #cfd6f6; border-radius: 10px; padding: 6px 14px;
+}
+.role-switcher-button:hover { border-color: var(--primary); }
+.role-switcher-kicker { font-size: 11.5px; font-weight: 600; letter-spacing: .04em;
+                        text-transform: uppercase; color: #5a647e; }
+.role-switcher-current { font-weight: 700; font-size: 15px; }
+.role-switcher-button > span[aria-hidden] { position: absolute; right: 10px; top: 50%;
+                                            transform: translateY(-50%); }
+.role-switcher-button { padding-right: 30px; position: relative; }
+.role-switcher-panel {
+  position: absolute; right: 0; top: calc(100% + 6px); z-index: 20; width: 300px;
+  background: #fff; border: 1px solid var(--line); border-radius: 12px;
+  box-shadow: 0 10px 30px rgba(20, 26, 46, .14); padding: 8px;
+}
+.role-switcher-panel ul { list-style: none; margin: 0; padding: 0; }
+.role-switcher-panel a {
+  display: flex; justify-content: space-between; align-items: center; gap: 8px;
+  padding: 10px 12px; border-radius: 8px; color: var(--text); text-decoration: none;
+}
+.role-switcher-panel a:hover, .role-switcher-panel a:focus-visible { background: var(--primary-light); }
+.role-switcher-panel a[aria-current="page"] { font-weight: 700; color: var(--primary); }
+.role-tag { font-size: 11.5px; font-weight: 700; border-radius: 999px; padding: 2px 8px;
+            white-space: nowrap; }
+.role-tag.current { background: var(--primary); color: #fff; }
+.role-tag.soon { background: #eef1f6; color: #44506a; }
+.role-switcher-note { font-size: 12.5px; color: var(--muted); margin: 6px 12px 6px; line-height: 1.4; }
+
+/* ---- Role page header ---- */
+.role-top .brand small { display: block; font-size: 12.5px; font-weight: 600;
+                         color: var(--muted); letter-spacing: .02em; }
+.account-area { display: flex; align-items: center; gap: 12px; }
+.account-name { color: var(--muted); font-size: 14.5px; }
+.dev-banner { background: #fff6e8; color: #5c3700; padding: 8px 24px; font-size: 14px;
+              border-bottom: 1px solid #f0d9b0; }
+
+:focus-visible { outline: 3px solid #1f5fbf; outline-offset: 2px; }
+.skip-link { position: absolute; left: 8px; top: -60px; background: #fff; padding: 8px 14px;
+             border-radius: 8px; z-index: 30; }
+.skip-link:focus { top: 8px; }
+
+@media (max-width: 760px) {
+  .top { flex-wrap: wrap; height: auto; min-height: 65px; gap: 8px; padding: 10px 16px; }
+  .top .role-switcher { margin-left: 0; margin-right: auto; order: 3; width: 100%; }
+  .role-switcher-panel { left: 0; right: auto; width: min(320px, calc(100vw - 32px)); }
+  .account-area { margin-left: auto; }
+}
+
+/* ---- Coming-soon role pages ---- */
+.coming-soon { max-width: 760px; }
+.coming-soon ul { line-height: 1.7; }
+.coming-soon .badge-soon { display: inline-block; font-size: 13px; font-weight: 700; color: #44506a;
+                           background: #eef1f6; border-radius: 999px; padding: 3px 10px; }

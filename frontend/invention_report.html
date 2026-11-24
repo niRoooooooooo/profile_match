@@ -42,6 +42,7 @@
     textarea, input[type=text], input[type=number] { width:100%; font:inherit; font-size:14px; line-height:1.45; border:1px solid #cbd5e1; border-radius:6px; padding:10px; background:#fff; color:var(--ink); }
     textarea { resize:vertical; min-height:74px; }
     .evidence { background:#f7f9fc; border-left:3px solid #90b4e8; padding:9px 12px; margin-top:8px; color:#49576a; font-size:12px; }
+    .unverified { display:block; background:#fff4e5; border-left:3px solid #e08a00; color:#7a4a00; padding:7px 10px; margin-top:6px; font-size:12px; }
     .evidence strong { display:block; }
     .item-card { border:1px solid #e2e7ef; border-radius:7px; padding:12px; margin:10px 0; }
     .subsection { margin-top:17px; }
@@ -53,6 +54,45 @@
     .empty { min-height:130px; display:flex; flex-direction:column; justify-content:center; gap:6px; color:var(--muted); }
     [hidden] { display:none !important; }
     @media(max-width:850px) { .wrap { grid-template-columns:1fr; } header { padding:18px 22px; } }
+    /* ---- Document-style report (View mode) and Edit mode ---- */
+    .mode-switch { display:inline-flex; border:1px solid var(--line); border-radius:8px; overflow:hidden; margin-left:auto; }
+    .mode-switch button { border-radius:0; background:#fff; color:#4d596b; border:0; padding:9px 14px; }
+    .mode-switch button.active { background:#eef4ff; color:var(--blue); }
+    .report-doc { max-width:860px; margin:22px auto 0; font-size:16.5px; line-height:1.68; color:#1e2a3e; }
+    .report-doc h1 { font-size:30px; line-height:1.25; margin:0 0 4px; }
+    .report-doc .doc-subtitle { color:var(--muted); font-size:16px; margin:0 0 12px; }
+    .report-doc .doc-notice { display:inline-block; font-size:12px; letter-spacing:.04em; font-weight:700; color:#8a5200; background:#fff6e8; padding:4px 11px; border-radius:999px; }
+    .report-doc .doc-meta { color:var(--muted); font-size:14px; margin:14px 0 10px; }
+    .report-doc .doc-disclaimer { font-size:14px; color:var(--muted); font-style:italic; border-left:3px solid var(--line); padding-left:12px; margin:10px 0 0; }
+    .report-doc .doc-section { border-top:1px solid #e6eaf0; padding-top:22px; margin-top:28px; }
+    .report-doc h2 { font-size:21px; margin:0 0 12px; }
+    .report-doc h2 .num { color:#8a96a8; font-weight:500; }
+    .report-doc .doc-version { font-size:14px; color:#41516a; margin:0 0 8px; }
+    .report-doc .doc-legend { font-size:13.5px; color:var(--muted); margin:8px 0 0; }
+    .report-doc .block-label { font-size:13px; color:var(--muted); font-style:italic; margin:0 0 4px; }
+    .report-doc h3 .block-label { display:inline; font-weight:400; margin-left:8px; }
+    .source-entry.target { background:#fff8d6; border-radius:6px; }
+    .report-doc h3 { font-size:16.5px; margin:18px 0 6px; }
+    .report-doc p { margin:0 0 12px; }
+    .report-doc ul { margin:0 0 12px; padding-left:22px; }
+    .report-doc li { margin:4px 0; }
+    .report-doc .facts { margin:0 0 12px; }
+    .report-doc .facts > div { margin:3px 0; }
+    .report-doc .facts b { font-weight:600; }
+    .report-doc .doc-note { color:var(--muted); font-style:italic; }
+    .report-doc table { border-collapse:collapse; width:100%; font-size:15px; margin:6px 0 14px; }
+    .report-doc th, .report-doc td { text-align:left; padding:7px 10px; border-bottom:1px solid #e6eaf0; vertical-align:top; }
+    .report-doc th { font-weight:600; color:#41516a; background:#f6f8fb; }
+    .cite { font-size:12px; color:var(--blue); text-decoration:none; margin-left:2px; vertical-align:super; }
+    .badge { font-size:11.5px; font-weight:600; color:#55627a; background:#f1f4f8; border-radius:999px; padding:1px 8px; margin-left:6px; white-space:nowrap; vertical-align:1px; font-style:normal; }
+    .badge.unverified, .badge.contradiction, .badge.discrepancy { color:#8a5200; background:#fff1dc; }
+    .source-entry { margin:6px 0 10px; padding:4px 8px; scroll-margin-top:80px; }
+    .source-entry .source-head { font-weight:600; font-size:15px; }
+    .source-entry blockquote { margin:6px 0 10px 18px; font-size:14px; color:#49576a; font-style:italic; }
+    .edit-field { margin:10px 0 18px; }
+    .edit-field > label { display:block; font-weight:600; font-size:14.5px; margin-bottom:5px; }
+    .edit-hint { font-size:12.5px; color:var(--muted); margin-top:4px; line-height:1.4; }
+    .add-link { background:none; border:0; color:var(--blue); padding:2px 0; font-weight:600; font-size:14px; }
   </style>
 </head>
 <body>
@@ -77,17 +117,21 @@
         <button class="secondary" id="regenerateBtn" type="button" hidden>Generate Again</button>
         <button class="secondary" id="parseBtn" type="button">Check Documents</button>
         <button id="submitBtn" type="button" hidden>Submit Report</button>
+        <span class="mode-switch" id="modeSwitch" hidden role="group" aria-label="Report mode">
+          <button type="button" id="viewModeBtn" class="active" aria-pressed="true">View report</button>
+          <button type="button" id="editModeBtn" aria-pressed="false">Edit report</button>
+        </span>
       </div>
       <div id="editor" hidden>
-        <div class="note">This report is AI-assisted and may contain mistakes. Check the original documents. When you change a claim, its previous AI evidence is cleared and the edit is marked as an unverified innovator statement. Saving edits does not rerun Qwen.</div>
+        <div class="note">This report is AI-assisted and may contain mistakes. Check the original documents. When you change a claim, its previous AI evidence is cleared and the edit is marked as an unverified innovator statement. Saving edits does not rerun the AI.</div>
         <div id="profileSections"></div>
       </div>
       <details id="diagnostics" hidden>
-        <summary>Document coverage and processing warnings</summary>
+        <summary>Technical diagnostics: AI provider, document processing and evidence warnings</summary>
         <div id="diagnosticContent"></div>
       </details>
       <div class="small" id="submissionInfo"></div>
-      <div id="submissions" hidden><h3>Previously submitted reports</h3><div id="submissionList"></div></div>
+      <div id="submissions" hidden><h3>Submitted snapshots (fixed copies)</h3><div id="submissionList"></div></div>
     </section>
   </main>
   <script>
@@ -108,6 +152,9 @@
       let isSaving = false;
       let busy = false;
       let saveBlocked = false;
+      let currentReport = null;   // server-rendered report for the saved draft
+      let submissionCount = null; // null = unknown (not loaded or failed)
+      let mode = 'view';          // 'view' (default) or 'edit'
 
       const labels = {
         identity: 'Invention overview', problem_solution: 'Problem and solution',
@@ -122,7 +169,7 @@
       function status(message, kind='') { const e=$('status');e.textContent=message;e.className='status'+(kind?' '+kind:''); }
       function busyState(value) {
         busy=value;
-        for(const id of ['generateBtn','regenerateBtn','parseBtn','submitBtn','refreshBtn'])$(id).disabled=value;
+        for(const id of ['generateBtn','regenerateBtn','parseBtn','submitBtn','refreshBtn','viewModeBtn','editModeBtn'])$(id).disabled=value;
       }
       async function api(method, endpoint, body) {
         const {data,error}=await supabaseClient.auth.getSession();
@@ -130,6 +177,8 @@
         const response=await fetch(endpoint,{method,headers:{'Authorization':`Bearer ${data.session.access_token}`,...(body===undefined?{}:{'Content-Type':'application/json'})},...(body===undefined?{}:{body:JSON.stringify(body)})});
         let payload={};try{payload=await response.json();}catch{}
         if(!response.ok){const msg=typeof payload.detail==='string'?payload.detail:JSON.stringify(payload.detail||{});const err=new Error(`HTTP ${response.status}: ${msg}`);err.status=response.status;throw err;}
+        // Draft responses carry the server-rendered report of the SAVED draft.
+        if(payload&&typeof payload==='object'&&Object.prototype.hasOwnProperty.call(payload,'report'))currentReport=payload.report;
         return payload;
       }
       function buttonVisibility() {
@@ -140,6 +189,7 @@
         $('submitBtn').hidden=!draft;
         $('editor').hidden=!draft;
         $('diagnostics').hidden=!draft;
+        $('modeSwitch').hidden=!draft||!currentReport;
       }
       function labelForInvention(inv) { return inv.title || 'Untitled invention'; }
       function renderInventions() {
@@ -181,13 +231,13 @@
           else if (selected) clearSelection();
         }catch(e){status(e.message,'error');list.replaceChildren(elem('p','small','Could not load inventions. Check login and permissions.'));}
       }
-      function clearSelection(){selected=null;draft=null;workingProfile=null;$('reportTitle').textContent='Choose an invention';$('reportSub').textContent='';sections.replaceChildren();buttonVisibility();}
+      function clearSelection(){selected=null;draft=null;workingProfile=null;currentReport=null;$('reportTitle').textContent='Choose an invention';$('reportSub').textContent='';sections.replaceChildren();buttonVisibility();}
       async function choose(inv) {
         if(busy){status('Finish the current report operation before switching inventions.');return;}
         if(selected?.id!==inv.id && editCounter>savedCounter){
           status('Save is still pending. Wait for “All edits saved” before switching inventions.','error');return;
         }
-        selected=inv;draft=null;workingProfile=null;saveBlocked=false;editCounter=0;savedCounter=0;
+        selected=inv;draft=null;workingProfile=null;currentReport=null;submissionCount=null;mode='view';saveBlocked=false;editCounter=0;savedCounter=0;
         $('reportTitle').textContent=labelForInvention(inv);
         $('reportSub').textContent=[inv.domain,inv.confidentiality?`Confidentiality: ${inv.confidentiality}`:null].filter(Boolean).join(' · ');
         $('submissionInfo').textContent='';$('submissions').hidden=true;$('submissionList').replaceChildren();sections.replaceChildren();buttonVisibility();renderInventions();
@@ -196,7 +246,7 @@
           const result=await api('GET',`/api/inventions/${inv.id}/profile/draft`);
           if(selected?.id!==inv.id)return;
           draft=result.draft;
-          if(draft){workingProfile=structuredClone(draft.edited_data);status('Saved draft loaded. You can edit it below; Qwen has not been run.','ok');renderEditor();}
+          if(draft){workingProfile=structuredClone(draft.edited_data);status('Saved draft loaded. You can edit it below; the AI has not been rerun.','ok');renderEditor();}
           else status('No AI report yet. Click Generate AI Report to analyze this invention’s documents.');
           buttonVisibility();void loadSubmissions();
         }catch(e){status(e.message,'error');}
@@ -207,10 +257,10 @@
           const out=await api('GET',`/api/inventions/${id}/profile/submissions`);
           if(selected?.id!==id)return;
           const container=$('submissionList');container.replaceChildren();
-          const submissions=out.submissions||[];$('submissions').hidden=!submissions.length;
+          const submissions=out.submissions||[];$('submissions').hidden=!submissions.length;submissionCount=submissions.length;updateVersionLine();
           for(const submissionId of submissions){
-            const card=elem('div','item-card');card.append(elem('strong','',submissionId));
-            card.append(elem('div','small','Innovator-submitted · Not management-verified'));
+            const card=elem('div','item-card');card.append(elem('strong','','Submitted snapshot · '+submissionId));
+            card.append(elem('div','small','Fixed copy; later draft edits do not change it · Innovator-submitted · Not management-verified'));
             for(const ext of ['docx','json']){
               const btn=elem('button','secondary',`Download ${ext.toUpperCase()}`);btn.style.margin='8px 8px 0 0';btn.type='button';
               btn.addEventListener('click',()=>void downloadSubmission(id,submissionId,ext));card.append(btn);
@@ -252,6 +302,11 @@
         outer.append(lbl,input);
         const notes=elem('div');
         notes.append(elem('span','small',`AI classification: ${pretty(claim.classification||'unknown')}`));
+        // Display only: surface the backend's UNVERIFIED flag next to the claim.
+        if(typeof claim.explanation==='string'&&claim.explanation.startsWith('UNVERIFIED')){
+          const flag=elem('span','unverified','⚠ UNVERIFIED — the AI\'s source passage could not be confirmed. Check the original document before relying on or submitting this statement.');
+          flag.setAttribute('role','note');flag.title=claim.explanation;notes.append(flag);
+        }
         if(Array.isArray(claim.evidence)){
           for(const ev of claim.evidence){
             const card=elem('div','evidence');
@@ -300,7 +355,179 @@
           });row.append(input);parent.append(row);
         }
       }
+      // ---------------------------------------------------------------
+      // Report View mode / Edit mode. Both use the SERVER-rendered report
+      // (same renderer as the submitted DOCX). Edits change workingProfile
+      // and call markDirty(), so the existing autosave/conflict logic saves them.
+      // ---------------------------------------------------------------
+      const INNOVATOR_EDIT='Innovator-edited statement; not independently verified against source documents.';
+      function getAt(obj,path){return path.split('.').reduce((o,k)=>o==null?undefined:o[k],obj);}
+      function setAt(obj,path,value){const keys=path.split('.');const last=keys.pop();const parent=keys.reduce((o,k)=>o[k],obj);parent[last]=value;}
+      // Same rule as the claim editor: edited text is an innovator statement,
+      // its AI citation is cleared, and it is never marked as a document fact.
+      function applySingleEdit(claim,text){
+        const changed=String(text??'').trim();
+        claim.value=changed||null;
+        claim.classification=changed?'inference':'missing';
+        claim.evidence=[];
+        claim.explanation=changed?INNOVATOR_EDIT:'Information not supplied.';
+        return claim;
+      }
+      // One item per line: unchanged lines keep their original claim (and
+      // citations); changed or new lines become innovator statements.
+      function applyListEdit(claims,text){
+        const lines=String(text??'').split('\n').map(x=>x.trim()).filter(Boolean);
+        const pool=(claims||[]).filter(c=>c&&c.classification!=='missing'&&c.value);
+        const used=new Set();
+        return lines.map(line=>{
+          const index=pool.findIndex((c,i)=>!used.has(i)&&String(c.value).trim()===line);
+          if(index>=0){used.add(index);return pool[index];}
+          return {value:line,classification:'inference',evidence:[],explanation:INNOVATOR_EDIT};
+        });
+      }
+      function statusHint(claim){
+        if(!claim||claim.classification==='missing'||!claim.value)return 'Not documented in the uploaded materials — add details if available.';
+        const ex=String(claim.explanation||'');
+        if(ex.startsWith('UNVERIFIED'))return '⚠ Unverified — the AI’s source passage could not be confirmed.';
+        if(ex.startsWith('Innovator-edited'))return 'Innovator-edited — not independently verified.';
+        return {document_fact:'From the uploaded documents (source cited in the report).',registration_fact:'Declared at registration.',inference:'AI interpretation.',recommendation:'AI recommendation.'}[claim.classification]||'';
+      }
+      function openSource(n){const d=$('src-'+n);if(d){for(const o of document.querySelectorAll?.('.source-entry.target')||[])o.classList.toggle('target',false);d.classList.toggle('target',true);d.scrollIntoView({behavior:'smooth',block:'center'});}}
+      function annotate(el,item){
+        for(const n of item.citations||[]){const a=elem('a','cite',`[${n}]`);a.href=`#src-${n}`;a.addEventListener('click',ev=>{ev.preventDefault();openSource(n);});el.append(a);}
+        if(item.label){el.append(elem('span','badge '+(item.status||''),item.status==='unverified'?'⚠ Unverified':item.label));}
+      }
+      function sectionHeading(section){const h=elem('h2');h.append(elem('span','num',`${section.number}.`),document.createTextNode(' '+section.title));return h;}
+      function renderView(report){
+        const doc=elem('article','report-doc');
+        doc.append(elem('h1','',report.title),elem('p','doc-subtitle',report.subtitle),elem('span','doc-notice',report.notice));
+        if(report.metadata?.length)doc.append(elem('p','doc-meta',report.metadata.map(m=>`${m.name}: ${m.value}`).join(' · ')));
+        if(report.version){const v=elem('p','doc-version',report.version);v.id='docVersion';doc.append(v);}
+        doc.append(elem('p','doc-disclaimer',report.disclaimer));
+        if(report.legend)doc.append(elem('p','doc-legend',report.legend));
+        for(const section of report.sections||[]){
+          const s=elem('section','doc-section');s.append(sectionHeading(section));
+          for(const block of section.blocks||[]){
+            if(block.kind==='note'){s.append(elem('p','doc-note',block.text||''));continue;}
+            if(block.heading&&block.kind!=='facts'){const h=elem('h3','',block.heading);if(block.label)h.append(elem('span','block-label',block.label));s.append(h);}
+            else if(block.label&&(block.kind==='facts'||block.kind==='bullets'))s.append(elem('p','block-label',block.label));
+            if(block.kind==='paragraph'){
+              for(const item of block.items){const parts=String(item.text).split(/\n+/).filter(t=>t.trim());
+                parts.forEach((t,i)=>{const p=elem('p','',t.trim());if(i===parts.length-1){annotate(p,item);if(!block.heading&&block.label)annotate(p,{label:block.label,status:block.status});}s.append(p);});}
+            }else if(block.kind==='facts'){
+              const box=elem('div','facts');
+              for(const item of block.items){const row=elem('div');if(item.name)row.append(elem('b','',item.name+': '));row.append(document.createTextNode(item.text));annotate(row,item);box.append(row);}
+              s.append(box);
+            }else if(block.kind==='bullets'){
+              const ul=elem('ul');for(const item of block.items){const li=elem('li','',item.text);annotate(li,item);ul.append(li);}s.append(ul);
+            }else if(block.kind==='table'){
+              const showStatus=block.items.some(i=>i.label);
+              const t=elem('table');const head=elem('tr');for(const c of (showStatus?['Result','Source','Status']:['Result','Source']))head.append(elem('th','',c));t.append(head);
+              for(const item of block.items){const tr=elem('tr');tr.append(elem('td','',item.text));
+                const src=elem('td');if((item.citations||[]).length)annotate(src,{citations:item.citations});else src.textContent='—';tr.append(src);
+                if(showStatus){const st=elem('td');if(item.label)annotate(st,{label:item.label,status:item.status});else st.textContent='Documented';tr.append(st);}t.append(tr);}
+              s.append(t);
+            }
+          }
+          if(section.key==='sources'&&report.sources?.length){
+            s.append(elem('h3','','References'));
+            for(const src of report.sources){
+              const d=elem('div','source-entry');d.id='src-'+src.number;
+              const where=[src.page!=null?'page '+src.page:null,src.section?'section '+src.section:null].filter(Boolean).join(', ');
+              d.append(elem('div','source-head',`[${src.number}] ${src.source_file}${where?' ('+where+')':''}`));
+              for(const ex of src.excerpts||[])d.append(elem('blockquote','',`“${ex}”`));
+              if(!(src.excerpts||[]).length&&src.note)d.append(elem('p','edit-hint',src.note));
+              s.append(d);
+            }
+          }
+          doc.append(s);
+        }
+        sections.replaceChildren(doc);
+        updateVersionLine();
+      }
+      function updateVersionLine(){
+        // The editable draft and submitted snapshots are separate: never call
+        // the draft "not submitted" unless the submission list loaded empty.
+        const v=$('docVersion');if(!v||!currentReport?.version)return;
+        let text=currentReport.version;
+        if(submissionCount===0)text+=' · not yet submitted';
+        else if(submissionCount>0)text+=` · ${submissionCount} submitted snapshot${submissionCount===1?'':'s'} listed below (fixed copies; editing this draft does not change them)`;
+        v.textContent=text;
+      }
+      function addLink(box,label,reveal){const add=elem('button','add-link','+ Add '+label.toLowerCase());add.type='button';add.addEventListener('click',()=>{add.remove();reveal();});box.append(add);}
+      function makeFieldEditor(field){
+        const box=elem('div','edit-field');const id='f-'+field.path.replace(/[^a-z0-9]+/gi,'-');
+        const label=elem('label','',field.label);label.htmlFor=id;box.append(label);
+        const value=getAt(workingProfile,field.path);
+        if(field.kind==='number'){
+          const input=elem('input');input.type='number';input.min='1';input.max='9';input.id=id;input.value=value??'';
+          input.addEventListener('input',()=>{const t=input.value.trim();const n=Number(t);
+            if(t===''||(Number.isInteger(n)&&n>=1&&n<=9)){setAt(workingProfile,field.path,t===''?null:n);markDirty();}});
+          box.append(input,elem('div','edit-hint','Indicative AI estimate only (1–9); leave blank if unknown.'));return box;
+        }
+        const ta=elem('textarea');ta.id=id;
+        if(field.kind==='lines'){
+          const lines=Array.isArray(value)?value:[];
+          ta.rows=Math.max(2,Math.min(8,lines.length+1));ta.value=lines.join('\n');
+          ta.addEventListener('input',()=>{setAt(workingProfile,field.path,ta.value.split('\n').map(x=>x.trim()).filter(Boolean));markDirty();});
+          box.append(ta,elem('div','edit-hint','One item per line.'));return box;
+        }
+        if(field.kind==='list'){
+          const present=(Array.isArray(value)?value:[]).filter(c=>c&&c.classification!=='missing'&&c.value);
+          ta.rows=Math.max(2,Math.min(10,present.length+1));ta.value=present.map(c=>c.value).join('\n');
+          const hint=elem('div','edit-hint','One item per line. Unchanged lines keep their sources; changed or new lines become innovator statements.');
+          const unverified=present.filter(c=>String(c.explanation||'').startsWith('UNVERIFIED')).length;
+          if(unverified)hint.textContent+=` ⚠ ${unverified} unverified item${unverified===1?'':'s'} — check the original documents.`;
+          ta.addEventListener('input',()=>{setAt(workingProfile,field.path,applyListEdit(getAt(workingProfile,field.path),ta.value));markDirty();});
+          if(!present.length){ta.hidden=true;hint.hidden=true;addLink(box,field.label,()=>{ta.hidden=false;hint.hidden=false;ta.focus();});}
+          box.append(ta,hint);return box;
+        }
+        const present=value&&value.classification!=='missing'&&value.value;
+        ta.rows=present&&String(value.value).length>160?6:3;ta.value=present?value.value:'';
+        const hint=elem('div','edit-hint',statusHint(value));
+        ta.addEventListener('input',()=>{
+          let claim=getAt(workingProfile,field.path);
+          if(!claim||typeof claim!=='object'){claim={value:null,classification:'missing',evidence:[],explanation:null};setAt(workingProfile,field.path,claim);}
+          applySingleEdit(claim,ta.value);hint.textContent=statusHint(claim);markDirty();
+        });
+        if(!present){ta.hidden=true;hint.hidden=true;addLink(box,field.label,()=>{ta.hidden=false;hint.hidden=false;ta.focus();});}
+        box.append(ta,hint);return box;
+      }
+      function renderEdit(report){
+        const doc=elem('div','report-doc edit-doc');
+        doc.append(elem('p','doc-disclaimer','Edit mode — changes save automatically. Edited text is recorded as an innovator statement and loses its AI citation; it is never shown as a verified document fact.'));
+        for(const section of report.sections||[]){
+          if(!section.fields?.length)continue;
+          const s=elem('section','doc-section');s.append(sectionHeading(section));
+          for(const field of section.fields)s.append(makeFieldEditor(field));
+          doc.append(s);
+        }
+        sections.replaceChildren(doc);
+      }
+      function renderDiagnostics(){
+        const meta=$('diagnosticContent');meta.replaceChildren();if(!workingProfile)return;
+        const rel=workingProfile.document_relevance||[];
+        if(rel.length){const ul=elem('ul');for(const item of rel)ul.append(elem('li','small',`${item.filename||'Document'} — ${item.relevance||'unknown'}: ${item.explanation||''}`));meta.append(ul);}
+        for(const entry of currentReport?.processing||[])meta.append(elem('p','small',`${entry.name}: ${entry.value}`));
+        for(const warning of currentReport?currentReport.diagnostics||[]:workingProfile.quality_warnings||[])meta.append(elem('p','small','• '+warning));
+      }
+      function updateModeButtons(){
+        for(const [id,m] of [['viewModeBtn','view'],['editModeBtn','edit']]){const b=$(id);b.classList.toggle('active',mode===m);b.setAttribute('aria-pressed',String(mode===m));}
+      }
+      async function setMode(next){
+        if(next===mode||!draft)return;
+        // View shows the server-rendered SAVED draft, so save pending edits first.
+        if(next==='view'&&!(await ensureSaved())){status('Edits are still saving. Try View again in a moment.','error');return;}
+        mode=next;renderEditor();
+      }
       function renderEditor(){
+        sections.replaceChildren();if(!workingProfile)return;
+        renderDiagnostics();
+        if(!currentReport){renderLegacyEditor();return;}   // fallback if no rendered report
+        updateModeButtons();$('modeSwitch').hidden=false;
+        if(mode==='edit')renderEdit(currentReport);else renderView(currentReport);
+      }
+      function renderLegacyEditor(){
         sections.replaceChildren();if(!workingProfile)return;
         for(const [key,value] of Object.entries(workingProfile)){
           if(readOnlySections.has(key)||key==='missing_information')continue;
@@ -311,10 +538,6 @@
           }else makeGenericField(value,key,wrapper);
           sections.append(wrapper);
         }
-        const meta=$('diagnosticContent');meta.replaceChildren();
-        const rel=workingProfile.document_relevance||[];
-        for(const item of rel){const p=elem('div','item-card');p.append(elem('strong','',`${item.filename||'Document'} — ${item.relevance||'unknown'}`));p.append(elem('p','small',item.explanation||''));meta.append(p);}
-        for(const warning of workingProfile.quality_warnings||[])meta.append(elem('p','small','• '+warning));
       }
       async function autosave(){
         if(isSaving||busy||saveBlocked||!draft||!selected)return;
@@ -337,10 +560,12 @@
       async function generate(regenerate){
         if(!selected||busy)return;
         if(regenerate){if(!(await ensureSaved()))return;if(!window.confirm('Generate Again will replace your current editable draft, including all saved corrections. Previous submitted reports are not affected. Continue?'))return;}
-        busyState(true);status('Local Qwen is analyzing this invention’s uploaded documents. Do not close this page while generation is running.');
+        // Explicit cloud-processing consent; the backend refuses without it.
+        if(!window.confirm('Send this invention’s uploaded documents to Google’s free Gemini API?\n\nGoogle may use data sent to its free API to improve its products. Only continue for fictional or non-sensitive test data — never for real, restricted or confidential inventions.\n\nIn demo mode the server also refuses any document not marked as a fictional test document.'))return;
+        busyState(true);status('Google Gemini is analyzing this invention’s uploaded documents. Do not close this page while generation is running.');
         try{
           const endpoint=`/api/inventions/${selected.id}/profile/${regenerate?'regenerate':'generate'}`;
-          const result=await api('POST',endpoint,regenerate?{expected_updated_at:draft.updated_at}:undefined);
+          const result=await api('POST',endpoint,regenerate?{expected_updated_at:draft.updated_at,cloud_processing_consent:true}:{cloud_processing_consent:true});
           draft=result.draft;workingProfile=structuredClone(draft.edited_data);editCounter=0;savedCounter=0;saveBlocked=false;
           draftLookup.set(selected.id,{updated_at:draft.updated_at,generation_number:draft.generation_number});renderInventions();renderEditor();buttonVisibility();
           status('AI report generated and saved. Review and edit the sections below.','ok');
@@ -374,6 +599,8 @@
       $('regenerateBtn').addEventListener('click',()=>void generate(true));
       $('submitBtn').addEventListener('click',()=>void submit());
       $('parseBtn').addEventListener('click',()=>void parse());
+      $('viewModeBtn').addEventListener('click',()=>void setMode('view'));
+      $('editModeBtn').addEventListener('click',()=>void setMode('edit'));
       buttonVisibility();void loadAll();
     });
   </script>

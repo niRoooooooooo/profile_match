@@ -4,7 +4,6 @@ This does NOT approve inventions for management. No existing document
 bucket, invention row, or approved profile record is modified.
 """
 
-import io
 import json
 import os
 import re
@@ -14,13 +13,11 @@ from urllib.parse import quote
 from uuid import UUID, uuid4
 
 import httpx
-from docx import Document
-from docx.enum.text import WD_ALIGN_PARAGRAPH
-from docx.shared import Inches, Pt, RGBColor
 from dotenv import load_dotenv
 from pydantic import ValidationError
 
 from app.schemas.profile import InventionAIProfile
+from app.services.report_docx import build_submission_docx
 from app.services.profile_service import (
     ProfileService, ProfileServiceError, ProfileAccessError,
     ProfileConflictError,
@@ -33,146 +30,13 @@ DOCX_MIME = "application/vnd.openxmlformats-officedocument.wordprocessingml.docu
 MAX_BYTES = 10 * 1024 * 1024
 SUBMISSION_PATTERN = re.compile(r"^[0-9]{8}T[0-9]{6}Z-[a-f0-9]{12}$")
 
-SECTION_TITLES = {
-    "identity": "Invention Overview",
-    "problem_solution": "Problem and Solution",
-    "technology": "Technology and Components",
-    "applications": "Applications and Industries",
-    "development": "Development and Validation",
-    "readiness": "Technology Readiness",
-    "intellectual_property": "Intellectual Property",
-    "commercialization": "Commercialization",
-    "partner_requirements": "Required Partner Capabilities",
-    "gaps": "Research Gaps and Next Steps",
-    "document_relevance": "Uploaded Document Relevance",
-    "discrepancies": "Document Discrepancies",
-    "missing_information": "Missing Information",
-    "quality_warnings": "Processing and Evidence Warnings",
-}
-
-
-def nice_label(text: str) -> str:
-    return str(text).replace("_", " ").strip().title()
-
-
-def statement_text(value) -> str:
-    if value is None:
-        return "Not provided"
-    if isinstance(value, bool):
-        return "Yes" if value else "No"
-    return str(value)
-
-
-def add_field(doc: Document, label: str, value, *, depth: int = 0):
-    """Render typed profile information without treating unverified edits as facts."""
-    if isinstance(value, dict) and "classification" in value and "value" in value:
-        p = doc.add_paragraph(style="Normal")
-        p.paragraph_format.left_indent = Inches(min(depth, 3) * .16)
-        p.add_run(f"{nice_label(label)}: ").bold = True
-        p.add_run(statement_text(value.get("value")))
-        classification = value.get("classification", "unknown")
-        explanation = (value.get("explanation") or "").strip()
-        marker = "Innovator-edited / unverified" if explanation.startswith("Innovator-edited") else nice_label(classification)
-        meta = doc.add_paragraph(f"Status: {marker}")
-        meta.style = "Caption"
-        meta.paragraph_format.left_indent = Inches(min(depth, 3) * .16)
-        if explanation and marker != "Innovator-edited / unverified":
-            p2 = doc.add_paragraph(explanation); p2.style = "Caption"
-        for ev in value.get("evidence") or []:
-            if not isinstance(ev, dict):
-                continue
-            source = str(ev.get("source_file") or "Source")
-            where = []
-            if ev.get("page") is not None:
-                where.append("page " + str(ev["page"]))
-            if ev.get("section"):
-                where.append("section " + str(ev["section"]))
-            snippet = str(ev.get("excerpt") or "")[:500]
-            cite = f"Evidence: {source}" + (" (" + ", ".join(where) + ")" if where else "")
-            if snippet:
-                cite += f" — {snippet}"
-            p3 = doc.add_paragraph(cite); p3.style = "Caption"
-        return
-    if isinstance(value, dict):
-        if depth > 0:
-            doc.add_heading(nice_label(label), level=min(depth + 1, 4))
-        for key, item in value.items():
-            add_field(doc, key, item, depth=depth + 1)
-    elif isinstance(value, list):
-        if not value:
-            doc.add_paragraph(f"{nice_label(label)}: No information supplied.")
-        else:
-            doc.add_heading(nice_label(label), level=min(depth + 2, 4))
-            for index, item in enumerate(value, 1):
-                if isinstance(item, (dict, list)):
-                    if isinstance(item, dict) and "classification" in item and "value" in item:
-                        add_field(doc, f"Item {index}", item, depth=depth + 1)
-                    else:
-                        add_field(doc, f"Item {index}", item, depth=depth + 1)
-                else:
-                    doc.add_paragraph(statement_text(item), style="List Bullet")
-    else:
-        p = doc.add_paragraph()
-        p.add_run(nice_label(label) + ": ").bold = True
-        p.add_run(statement_text(value))
-
-
 def make_docx_bytes(manifest: dict) -> bytes:
-    """Build a human-readable report. No cloud AI service is used."""
-    doc = Document()
-    section = doc.sections[0]
-    section.top_margin = Inches(.8)
-    section.bottom_margin = Inches(.75)
-    section.left_margin = Inches(.8)
-    section.right_margin = Inches(.8)
-    normal = doc.styles["Normal"]
-    normal.font.name = "Calibri"
-    normal.font.size = Pt(10)
-    normal.font.color.rgb = RGBColor(30, 42, 62)
-    normal.paragraph_format.space_after = Pt(6)
+    """Build ONE consolidated, professional report from the saved edited draft.
 
-    title = (manifest.get("profile", {}).get("identity", {}).get("title") or {}).get("value")
-    heading = doc.add_heading("Invention Profiling Report", 0)
-    heading.alignment = WD_ALIGN_PARAGRAPH.CENTER
-    if title:
-        p = doc.add_paragraph(title)
-        p.alignment = WD_ALIGN_PARAGRAPH.CENTER
-        p.style = "Subtitle"
-
-    doc.add_paragraph("INNOVATOR-SUBMITTED · NOT MANAGEMENT-VERIFIED").runs[0].bold = True
-    meta = doc.add_table(rows=0, cols=2)
-    meta.style = "Table Grid"
-    for k, v in (
-        ("Invention ID", manifest["invention_id"]),
-        ("Submission ID", manifest["submission_id"]),
-        ("Submitted (UTC)", manifest["submitted_at"]),
-        ("Qwen generation", manifest.get("generation_number")),
-        ("Review status", "Innovator-submitted; pending future management review"),
-    ):
-        row = meta.add_row().cells
-        row[0].text = k
-        row[1].text = statement_text(v)
-
-    doc.add_paragraph(
-        "This report summarizes uploaded invention documents and the innovator's edits. "
-        "Document statements, inferred applications, and innovator corrections are "
-        "not independently verified. Refer to the original confidential files "
-        "before relying on technical, legal, or commercial claims."
-    )
-    profile = manifest["profile"]
-    for key, value in profile.items():
-        doc.add_heading(SECTION_TITLES.get(key, nice_label(key)), level=1)
-        if isinstance(value, dict):
-            for field, child in value.items():
-                add_field(doc, field, child)
-        else:
-            add_field(doc, key, value)
-    footer = section.footer.paragraphs[0]
-    footer.text = "Profile Match · Confidential invention profile · Innovator-submitted / unverified"
-    footer.alignment = WD_ALIGN_PARAGRAPH.CENTER
-    stream = io.BytesIO()
-    doc.save(stream)
-    return stream.getvalue()
+    Uses the shared report renderer (the same one the web report uses), so
+    the DOCX always matches the innovator's latest saved edits. No AI is used.
+    """
+    return build_submission_docx(manifest)
 
 
 class ProfileSubmissionService:

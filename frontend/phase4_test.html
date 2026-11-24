@@ -78,7 +78,7 @@
         <button id="submitBtn" type="button" hidden>Submit Report</button>
       </div>
       <div id="editor" hidden>
-        <div class="note">This report is AI-assisted and may contain mistakes. Check the original documents. When you change a claim, its previous AI evidence is cleared and the edit is marked as an unverified innovator statement. Saving edits does not rerun Qwen.</div>
+        <div class="note">This report is AI-assisted and may contain mistakes. Check the original documents. When you change a claim, its previous AI evidence is cleared and the edit is marked as an unverified innovator statement. Saving edits does not rerun the AI.</div>
         <div id="profileSections"></div>
       </div>
       <details id="diagnostics" hidden>
@@ -190,7 +190,7 @@
           const result=await api('GET',`/api/inventions/${inv.id}/profile/draft`);
           if(selected?.id!==inv.id)return;
           draft=result.draft;
-          if(draft){workingProfile=structuredClone(draft.edited_data);status('Saved draft loaded. You can edit it below; Qwen has not been run.','ok');renderEditor();}
+          if(draft){workingProfile=structuredClone(draft.edited_data);status('Saved draft loaded. You can edit it below; the AI has not been rerun.','ok');renderEditor();}
           else status('No AI report yet. Click Generate AI Report to analyze this invention’s documents.');
           buttonVisibility();void loadSubmissions();
         }catch(e){status(e.message,'error');}
@@ -331,7 +331,7 @@
       async function generate(regenerate){
         if(!selected||busy)return;
         if(regenerate){if(!(await ensureSaved()))return;if(!window.confirm('Generate Again will replace your current editable draft, including all saved corrections. Previous submitted reports are not affected. Continue?'))return;}
-        busyState(true);status('Local Qwen is analyzing this invention’s uploaded documents. Do not close this page while generation is running.');
+        busyState(true);status('Google Gemini is analyzing this invention’s uploaded documents. Do not close this page while generation is running.');
         try{
           const endpoint=`/api/inventions/${selected.id}/profile/${regenerate?'regenerate':'generate'}`;
           const result=await api('POST',endpoint,regenerate?{expected_updated_at:draft.updated_at}:undefined);
