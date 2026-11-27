@@ -1,6 +1,6 @@
 // Administrator module — shared UI helpers and page authorization.
 //
-// The only network request is GET/DELETE /admin/session (the caller's own
+// The only network request is GET /admin/session (the caller's own
 // server-verified administrative session). Tabs, dialogs, local file
 // selection, form checks and filters stay local to the browser tab: nothing
 // is saved, uploaded or sent, and no privileged operation is ever reported as
@@ -293,37 +293,91 @@
     }
   }
 
-  function revokeUiSession() {
-    return fetch(SESSION_URL, {method: 'DELETE', credentials: 'same-origin', keepalive: true})
-      .catch(() => {});
-  }
+  // Sign-out is handled by the shared sign-out code (session-header.js),
+  // which ends this UI session on the server before signing out.
 
-  function showDenied(status) {
-    const text = status === 401
-      ? 'Your administrator session has ended. Reload the page to sign in again.'
-      : status === 403 ? 'Administrator access is not available for this account.'
-      : 'Administrator access could not be verified, so the interface is not shown.';
+  const DENIED_TEXT = {
+    401: 'Your administrator session has ended. Reload the page to sign in again.',
+    403: 'Administrator access is not available for this account.',
+    page: 'Your administrative role no longer includes this page.',
+    changed: 'Your administrative permissions have changed. Reload the page to continue ' +
+             'with your current access.',
+    other: 'Administrator access could not be verified, so the interface is not shown.'
+  };
+
+  // Removes the whole interface (content, navigation and every control, so
+  // pending interactions cannot continue). Never restored without a fresh,
+  // server-authorized page load.
+  function showDenied(kind) {
+    const text = DENIED_TEXT[kind] || DENIED_TEXT.other;
     const app = document.querySelector('.app');
     if (app) {
       app.replaceChildren(el('main', {id: 'main', class: 'content adm-content', tabindex: '-1'},
         el('h1', {text: 'Administrator access'}),
         el('p', {class: 'notice bad', role: 'alert', text}),
-        el('p', {}, el('a', {class: 'btn', href: '/dashboard', text: 'Back to Innovator'}))));
+        el('p', {}, el('a', {class: 'btn', href: '/dashboard', text: 'Back to Innovator'}), ' ',
+          el('a', {class: 'btn', href: '/login', text: 'Sign in'}))));
     }
     for (const banner of document.querySelectorAll('.preview-banner')) banner.remove();
+    for (const dialog of document.querySelectorAll('dialog[open]')) dialog.close();
+    const switcher = document.getElementById('roleSwitcher');
+    if (switcher) { switcher.hidden = true; switcher.replaceChildren(); }
+    window.AdminSession = null;
     document.body.dataset.auth = 'denied';
   }
 
-  function scheduleExpiryNotice(session) {
-    const ms = session.expires_at * 1000 - Date.now();
-    if (!(ms > 0) || ms > 2147483647) return;
-    setTimeout(() => {
-      const main = document.getElementById('main');
-      if (!main || document.getElementById('sessionExpired')) return;
-      main.prepend(el('p', {id: 'sessionExpired', class: 'notice warn', role: 'alert',
-        text: 'Your administrator session has expired. Reload the page to continue; access ' +
-              'will be checked again.'}));
-    }, ms);
+  // Re-checks the session periodically, at its expiry, when the tab becomes
+  // visible, when the page is restored from history and when a UI session is
+  // ended in this browser. The server refuses every request on its own; this
+  // only stops showing an interface that is no longer authorized.
+  const CHECK_EVERY_MS = 60 * 1000;
+  function watchSession(initial) {
+    const pageFile = location.pathname.split('/').pop() || 'overview.html';
+    const servedPermissions = [...initial.permissions];
+    let timer = null;
+    let sequence = 0;
+    let stopped = false;
+    const stop = kind => { stopped = true; clearTimeout(timer); showDenied(kind); };
+    const schedule = expiresAt => {
+      clearTimeout(timer);
+      const untilExpiry = Number(expiresAt) * 1000 - Date.now() + 1000;
+      const delay = Number.isFinite(untilExpiry) ? Math.min(CHECK_EVERY_MS, untilExpiry)
+        : CHECK_EVERY_MS;
+      timer = setTimeout(check, Math.max(1000, delay));
+    };
+    async function check() {
+      if (stopped) return;
+      const mine = ++sequence;
+      let response = null;
+      let session = null;
+      try {
+        response = await fetch(SESSION_URL, {credentials: 'same-origin', cache: 'no-store',
+                                             headers: {Accept: 'application/json'}});
+        if (response.ok) session = await response.json();
+      } catch (error) {
+        session = null;
+      }
+      if (stopped) return;
+      if (!session) { stop(response && (response.status === 401 || response.status === 403)
+                             ? response.status : 'other'); return; }
+      if (session.account_status !== 'active' || !ROLE_LABELS[session.role] ||
+          !Array.isArray(session.permissions) || !session.pages) { stop('other'); return; }
+      if (session.user_id !== initial.user_id || session.role !== initial.role) {
+        stop(401);
+        return;
+      }
+      if (pageFile in session.pages && session.pages[pageFile] !== true) { stop('page'); return; }
+      const granted = new Set(session.permissions);
+      if (servedPermissions.some(permission => !granted.has(permission))) {
+        stop('changed');
+        return;
+      }
+      if (mine === sequence) schedule(session.expires_at);
+    }
+    document.addEventListener('visibilitychange', () => { if (!document.hidden) check(); });
+    window.addEventListener('pageshow', event => { if (event.persisted) check(); });
+    document.addEventListener('profile-match:ui-session-ended', check);
+    schedule(initial.expires_at);
   }
 
   // Page scripts register a builder; it runs after authorization and before
@@ -343,7 +397,8 @@
     }
     if (!session || !Array.isArray(session.permissions) || !session.pages ||
         !ROLE_LABELS[session.role] || session.account_status !== 'active') {
-      showDenied(response ? response.status : 0);
+      const status = response ? response.status : 0;
+      showDenied(status === 401 || status === 403 ? status : 'other');
       return;
     }
 
@@ -355,9 +410,7 @@
     applyPermissions(document, session);
     enhance(document);
 
-    const logout = document.getElementById('logoutButton');
-    if (logout) logout.addEventListener('click', revokeUiSession, {capture: true});
-    scheduleExpiryNotice(session);
+    watchSession(session);
 
     document.body.dataset.auth = 'ready';
     const heading = document.querySelector('#main h1');

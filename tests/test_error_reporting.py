@@ -7,6 +7,7 @@ import _fixtures as fx  # noqa: F401  (adds backend to sys.path)
 from fastapi.testclient import TestClient
 
 import app.main
+from app.core.account_status import ActiveAccount, get_account_status_service
 from app.services.cloud_authorization import CloudProcessingNotAuthorized
 from app.services.document_processor import DocumentProcessingError
 from app.services.gemini_client import (
@@ -23,8 +24,18 @@ FAKE_SECRETS = ("AIzaSyFAKEFAKEFAKEFAKEFAKEFAKEFAKE00", "AQ.FAKEfakeFAKEfake1234
                 "sb_secret_FAKEfake123456", "eyJhbGciOiJIUzI1NiJ9.FAKEPAYLOADFAKE.SIG")
 
 
+class _ActiveAccountStatus:
+    """Authentication mock: every token belongs to an active account."""
+
+    async def verify_active(self, token):
+        return ActiveAccount(user_id=fx.OWNER_ID, access_token=token)
+
+
 class ErrorReportingTests(unittest.TestCase):
     def setUp(self):
+        overrides = app.main.app.dependency_overrides
+        overrides[get_account_status_service] = _ActiveAccountStatus
+        self.addCleanup(overrides.pop, get_account_status_service, None)
         self.client = TestClient(app.main.app)
 
     def generate(self, error):

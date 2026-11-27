@@ -16,6 +16,7 @@ from dotenv import load_dotenv
 from pydantic import ValidationError
 
 from app.agents.profiling_agent import generate_invention_profile
+from app.core.account_status import ensure_active_account
 from app.schemas.profile import InventionAIProfile
 
 
@@ -527,6 +528,15 @@ class ProfileService:
         await self._owner_id(
             invention_id,
             access_token
+        )
+
+        # Phase 5.4.3B.3: fresh application-wide account check
+        # before the generated draft is persisted. A restricted
+        # account (403), an invalid session (401) or an
+        # unavailable/malformed status (503) saves nothing.
+        await ensure_active_account(
+            access_token,
+            expected_user_id=user_id
         )
 
         if existing:

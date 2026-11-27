@@ -71,6 +71,9 @@ class FakeSupabase:
         self.requests = []
         self.unexpected = []
         self._clock = itertools.count(1)
+        # Application-wide account status (Phase 5.4.3B); no entry = no
+        # restriction record (the RPC returns account_status null).
+        self.account_status = {}
         documents = documents or [
             (DOC_NAME, docx_bytes(fx.PAGE_1, fx.PAGE_2)),
             (UNRELATED_NAME, docx_bytes(fx.BAKERY)),
@@ -124,6 +127,13 @@ class FakeSupabase:
 
         if request.method == "GET" and path == "/auth/v1/user":
             return self._json(200, {"id": user}) if user else self._json(401, {})
+
+        # Caller's own account record (SECURITY DEFINER self-lookup).
+        if path == "/rest/v1/rpc/institutional_get_my_access" and request.method == "POST":
+            if not user:
+                return self._json(401, {})
+            return self._json(200, {"user_id": user, "account_status": self.account_status.get(user),
+                                    "memberships": []})
 
         if path == "/rest/v1/inventions" and request.method == "GET" and user:
             rows = [r for r in self.inventions.values() if r["owner_id"] == user]
@@ -396,7 +406,9 @@ class FullWorkflowTests(WorkflowTestBase):
             self.assertEqual(response.headers["cache-control"], "private, no-store")
 
         # 11. Submission is not approval: no invention/table writes beyond drafts.
-        writes = [(m, p) for m, p, _ in sb.requests if m in ("POST", "PATCH", "PUT", "DELETE")]
+        # The account-status RPC is a read-only lookup (PostgREST RPCs use POST).
+        writes = [(m, p) for m, p, _ in sb.requests if m in ("POST", "PATCH", "PUT", "DELETE")
+                  and p != "/rest/v1/rpc/institutional_get_my_access"]
         allowed_paths = ("/rest/v1/invention_profile_drafts", f"/storage/v1/object/{REPORT_BUCKET}/",
                          f"/storage/v1/object/list/{REPORT_BUCKET}")
         self.assertTrue(all(p.startswith(allowed_paths) for _, p in writes), writes)
@@ -437,6 +449,111 @@ class AccessControlTests(WorkflowTestBase):
             response = self.call(method, path, token=OTHER_TOKEN, json=body)
             self.assertEqual(response.status_code, 404, (method, path, response.text))
         self.assertEqual(self.gemini.calls, 1)
+
+
+class AccountStatusEnforcementTests(WorkflowTestBase):
+    """Phase 5.4.4: application-wide account status on every Innovator business
+    API, with the REAL authorization code against the fake Supabase."""
+
+    RPC = "/rest/v1/rpc/institutional_get_my_access"
+    ENDPOINTS = (("GET", "/draft", None),
+                 ("PUT", "/draft", {"edited_data": {}, "expected_updated_at": "x"}),
+                 ("POST", "/generate", CONSENT),
+                 ("POST", "/regenerate", {"expected_updated_at": "x", **CONSENT}),
+                 ("POST", "/submit", {"expected_updated_at": "x"}),
+                 ("GET", "/submissions", None),
+                 ("GET", "/submissions/20261124T120000Z-abcdef123456/json", None))
+
+    def every_endpoint(self):
+        results = [((m, p), self.call(m, p, json=b)) for m, p, b in self.ENDPOINTS]
+        parse = self.client.post(f"/api/inventions/{fx.INVENTION_ID}/documents/parse",
+                                 headers={"Authorization": f"Bearer {OWNER_TOKEN}"})
+        return results + [(("POST", "documents/parse"), parse)]
+
+    def only_identity_and_status_requests(self):
+        return [p for _, p, _ in self.supabase.requests if p not in ("/auth/v1/user", self.RPC)] == []
+
+    def account_record(self, response):
+        original = self.supabase.handler
+
+        def handler(request):
+            if unquote(request.url.path) == self.RPC:
+                self.supabase.requests.append((request.method, self.RPC, {}))
+                return response(request) if callable(response) else response
+            return original(request)
+        self.supabase.handler = handler
+
+    def test_restricted_accounts_stop_before_gemini_and_privileged_operations(self):
+        for value in ("suspended", "banned", "unknown-status"):
+            self.supabase.account_status[fx.OWNER_ID] = value
+            self.supabase.requests.clear()
+            for name, response in self.every_endpoint():
+                self.assertEqual(response.status_code, 403, (value, name))
+                self.assertEqual(response.json()["detail"], "This account is restricted.")
+            self.assertEqual(self.gemini.calls, 0, value)
+            self.assertTrue(self.only_identity_and_status_requests(), value)
+        self.assertEqual(self.supabase.drafts, {})
+        self.assertEqual([k for k in self.supabase.objects if k[0] == REPORT_BUCKET], [])
+
+    def test_explicit_null_and_active_status_allowed(self):
+        self.assertEqual(self.call("GET", "/draft").status_code, 200)          # null record
+        self.supabase.account_status[fx.OWNER_ID] = "active"
+        self.assertEqual(self.call("GET", "/draft").status_code, 200)
+
+    def test_malformed_mismatched_and_unavailable_records_fail_closed(self):
+        cases = (httpx.Response(200, json={"user_id": fx.OWNER_ID, "memberships": []}),       # field missing
+                 httpx.Response(200, json={"user_id": fx.OWNER_ID, "account_status": 1}),      # wrong type
+                 httpx.Response(200, json=[{"user_id": fx.OWNER_ID, "account_status": None}]), # not an object
+                 httpx.Response(200, content=b"null", headers={"Content-Type": "application/json"}),
+                 httpx.Response(200, json={"account_status": None}),                           # no identity
+                 httpx.Response(200, json={"user_id": OTHER_USER, "account_status": None}),    # mismatched
+                 httpx.Response(404, json={"code": "PGRST202"}),                               # function missing
+                 httpx.Response(503, json={}))                                                 # outage
+        original = self.supabase.handler
+        for case in cases:
+            self.supabase.handler = original
+            self.account_record(case)
+            self.supabase.requests.clear()
+            for name, response in self.every_endpoint():
+                self.assertEqual(response.status_code, 503, (case.content[:60], name))
+            self.assertTrue(self.only_identity_and_status_requests())
+        self.supabase.handler = original
+
+        def unreachable(request):
+            raise httpx.ConnectError("unreachable", request=request)
+        self.account_record(unreachable)
+        self.assertEqual(self.call("GET", "/draft").status_code, 503)
+        self.assertEqual(self.gemini.calls, 0)
+
+    def test_restriction_during_generation_saves_no_draft(self):
+        original = self.gemini.generate_structured
+
+        def suspend_while_generating(*args, **kwargs):
+            self.supabase.account_status[fx.OWNER_ID] = "suspended"
+            return original(*args, **kwargs)
+        self.gemini.generate_structured = suspend_while_generating
+        response = self.call("POST", "/generate", json=CONSENT)
+        self.assertEqual(response.status_code, 403, response.text)
+        self.assertGreaterEqual(self.gemini.calls, 1)
+        self.assertEqual(self.supabase.drafts, {}, "the generated draft was not persisted")
+
+    def test_restriction_during_submission_publishes_nothing_new(self):
+        draft = self.call("POST", "/generate", json=CONSENT).json()["draft"]
+        self.assertEqual(self.call("POST", "/submit", json={"expected_updated_at": draft["updated_at"]})
+                         .status_code, 200)
+        earlier = {k: v for k, v in self.supabase.objects.items() if k[0] == REPORT_BUCKET}
+        original = self.supabase.handler
+
+        def ban_after_json_upload(request):
+            response = original(request)
+            if request.method == "POST" and unquote(request.url.path).endswith("/profile.json"):
+                self.supabase.account_status[fx.OWNER_ID] = "banned"
+            return response
+        self.supabase.handler = ban_after_json_upload
+        response = self.call("POST", "/submit", json={"expected_updated_at": draft["updated_at"]})
+        self.assertEqual(response.status_code, 403, response.text)
+        self.assertEqual({k: v for k, v in self.supabase.objects.items() if k[0] == REPORT_BUCKET}, earlier,
+                         "partial upload removed; earlier submission unchanged")
 
 
 class BlockedInventionTests(WorkflowTestBase):

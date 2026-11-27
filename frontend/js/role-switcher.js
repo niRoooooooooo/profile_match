@@ -14,10 +14,17 @@
 //   when it arrives (account switching cannot show another account's list).
 // - Administrator and institutional interfaces need a short-lived server UI
 //   session, started from the existing Supabase session before navigating.
-// - On institutional pages the UI session is re-checked periodically; when it
-//   expires, is revoked or cannot be verified, the page content is removed.
-// - Sign-out ends both UI sessions (best effort: the requests are sent
-//   while the page navigates away).
+// - On institutional pages the UI session is re-checked periodically, at its
+//   expiry, when the tab becomes visible or is restored from history, and
+//   when the account changes. When it expires, is revoked, belongs to another
+//   account, cannot be verified, or this page's permissions were reduced, the
+//   page content is removed. It is never restored without a fresh page load
+//   (which the server authorizes again).
+// - Server UI sessions must belong to the account signed in to Supabase in
+//   this browser; any other account's session is ended.
+// - window.ProfileMatchUISessions.end() ends both UI sessions and waits (with
+//   a time limit) for the server to confirm. The existing sign-out handlers
+//   call it before the Supabase sign-out.
 (function () {
   'use strict';
 
@@ -33,7 +40,9 @@
                           'innovation-center': 'innovation_center'};
   const INSTITUTIONAL_PAGES = new Set(['innovation-center']);
   const CHECK_EVERY_MS = 60 * 1000;
+  const END_TIMEOUT_MS = 4000;
   const ID_PATTERN = /^[a-z_]+$/;
+  const ENDED_EVENT = 'profile-match:ui-session-ended';
 
   const offline = () => location.protocol === 'file:';
 
@@ -41,11 +50,61 @@
     return fetch(url, Object.assign({credentials: 'same-origin', cache: 'no-store'}, options));
   }
 
-  // Ends the administrative and institutional UI sessions.
-  function revokeUiSessions() {
-    if (offline()) return Promise.resolve();
-    return Promise.all([ADMIN_SESSION_URL, INSTITUTIONAL_SESSION_URL].map(url =>
-      request(url, {method: 'DELETE', keepalive: true}).catch(() => {})));
+  const announceEnded = () => document.dispatchEvent(new CustomEvent(ENDED_EVENT));
+
+  // DELETE one UI session; true only if the server confirmed it (2xx).
+  async function endOne(url, timeoutMs) {
+    const controller = typeof AbortController === 'function' ? new AbortController() : null;
+    const timer = controller ? setTimeout(() => controller.abort(), timeoutMs) : null;
+    try {
+      const response = await request(url, {method: 'DELETE', keepalive: true,
+                                           signal: controller ? controller.signal : undefined});
+      return response.ok;
+    } catch (error) {
+      return false;
+    } finally {
+      if (timer) clearTimeout(timer);
+    }
+  }
+
+  // Ends the administrative and institutional UI sessions and waits (bounded)
+  // for the server. {confirmed: true} only when the server confirmed both.
+  let ending = null;
+  let lastEnded = null;                  // {time, confirmed} of the latest end
+  const recentlyEnded = () => Boolean(lastEnded && lastEnded.confirmed &&
+                                      Date.now() - lastEnded.time < 10000);
+  function endUiSessions(options) {
+    if (offline()) return Promise.resolve({confirmed: false, offline: true});
+    if (ending) return ending;                     // no duplicate requests
+    const timeoutMs = (options && options.timeoutMs) || END_TIMEOUT_MS;
+    ending = Promise.all([ADMIN_SESSION_URL, INSTITUTIONAL_SESSION_URL]
+      .map(url => endOne(url, timeoutMs)))
+      .then(results => {
+        lastEnded = {time: Date.now(), confirmed: results.every(Boolean)};
+        return {confirmed: lastEnded.confirmed, admin: results[0], institutional: results[1]};
+      })
+      .finally(() => { announceEnded(); setTimeout(() => { ending = null; }, 0); });
+    return ending;
+  }
+  const revokeUiSessions = () => endUiSessions();
+
+  // Server UI sessions must belong to the Supabase account signed in here.
+  // A session of any other account (or with no signed-in account) is ended.
+  async function verifySessionOwners(userId) {
+    if (offline()) return;
+    for (const url of [ADMIN_SESSION_URL, INSTITUTIONAL_SESSION_URL]) {
+      try {
+        const response = await request(url, {headers: {Accept: 'application/json'}});
+        if (!response.ok) continue;                 // no live session here
+        const body = await response.json().catch(() => null);
+        if (!userId || !body || body.user_id !== userId) {
+          await endOne(url, END_TIMEOUT_MS);
+          announceEnded();
+        }
+      } catch (error) {
+        /* unreachable: the server refuses the session on its own */
+      }
+    }
   }
 
   // The page's existing Supabase client (loaded by the page itself). Never
@@ -103,14 +162,20 @@
               'Reload the page to sign in again.'],
     denied: ['Access not available', 'Institutional access is not available for this account.'],
     unavailable: ['Access could not be verified', 'Institutional access could not be verified, ' +
-                  'so this page has been closed. Try again later.']
+                  'so this page has been closed. Try again later.'],
+    changed: ['Access changed', 'Your permissions for this interface have changed. ' +
+              'Reload the page to continue with your current access.']
   };
 
   let locked = false;
   function lockInstitutionalPage(kind) {
     if (locked || !INSTITUTIONAL_PAGES.has(document.body.dataset.role) || offline()) return;
     locked = true;
+    // Remove protected content, navigation and controls (pending interactions
+    // go with them); nothing is restored without a fresh authorized page load.
     for (const node of document.querySelectorAll('body > .app, body > .dev-banner')) node.remove();
+    const switcher = document.getElementById('roleSwitcher');
+    if (switcher) { switcher.hidden = true; switcher.replaceChildren(); }
     const [title, text] = LOCK_TEXT[kind] || LOCK_TEXT.denied;
     const box = document.createElement('main');
     box.id = 'interfaceLocked';
@@ -137,7 +202,14 @@
   function watchInstitutionalSession() {
     const role = document.body.dataset.role;
     if (!INSTITUTIONAL_PAGES.has(role) || offline()) return;
+    // What the server granted when it served this page (data-interface-*).
+    const pageFile = location.pathname.split('/').pop();
+    const servedPermissions = (document.body.dataset.interfacePermissions || '')
+      .split(' ').filter(Boolean);
+    let sessionUser = null;
     let timer = null;
+    let sequence = 0;
+    const lock = kind => { clearTimeout(timer); lockInstitutionalPage(kind); };
     const schedule = (expiresAt) => {
       clearTimeout(timer);
       const untilExpiry = Number(expiresAt) * 1000 - Date.now() + 1000;
@@ -147,23 +219,34 @@
     };
     async function check() {
       if (locked) return;
+      const mine = ++sequence;
       try {
         const response = await request(INSTITUTIONAL_SESSION_URL,
                                        {headers: {Accept: 'application/json'}});
-        if (response.status === 401) { lockInstitutionalPage('expired'); return; }
-        if (response.status === 403) { lockInstitutionalPage('denied'); return; }
-        if (!response.ok) { lockInstitutionalPage('unavailable'); return; }
+        if (locked) return;
+        if (response.status === 401) { lock('expired'); return; }
+        if (response.status === 403) { lock('denied'); return; }
+        if (!response.ok) { lock('unavailable'); return; }
         const body = await response.json();
-        if (!body || !body.actors || !body.actors[PAGE_INTERFACE[role]]) {
-          lockInstitutionalPage('denied');
+        if (locked) return;
+        const actor = body && body.actors && body.actors[PAGE_INTERFACE[role]];
+        if (!actor || typeof body.user_id !== 'string') { lock('denied'); return; }
+        if (sessionUser && body.user_id !== sessionUser) { lock('expired'); return; }
+        sessionUser = sessionUser || body.user_id;
+        const granted = new Set(Array.isArray(actor.permissions) ? actor.permissions : []);
+        if ((actor.pages && pageFile in actor.pages && actor.pages[pageFile] !== true) ||
+            servedPermissions.some(permission => !granted.has(permission))) {
+          lock('changed');                         // reduced since the page was served
           return;
         }
-        schedule(body.expires_at);
+        if (mine === sequence) schedule(body.expires_at);   // a newer check reschedules
       } catch (error) {
-        lockInstitutionalPage('unavailable');
+        lock('unavailable');
       }
     }
     document.addEventListener('visibilitychange', () => { if (!document.hidden) check(); });
+    window.addEventListener('pageshow', event => { if (event.persisted) check(); });
+    document.addEventListener(ENDED_EVENT, check);
     check();
   }
 
@@ -285,13 +368,16 @@
       host.hidden = false;
     }
 
-    async function refresh() {
+    async function refresh(initial) {
       const mine = ++generation;
-      hide();
+      if (initial) hide();                                   // nothing shown while pending
       const result = await loadInterfaces();
       if (mine !== generation) return;                       // a newer check is running
+      const client = await existingClient();
       const now = await currentSession();
       if (mine !== generation) return;
+      // Server UI sessions of another (or no) account are ended.
+      if (client) verifySessionOwners(now ? now.userId : null);
       if (!result || !now || now.userId !== result.userId) { hide(); return; }
       knownUser = result.userId;
       const current = result.interfaces.some(item => item.id === currentId);
@@ -302,7 +388,9 @@
         hide();
         return;
       }
-      if (result.interfaces.length < 2) { hide(); return; }
+      // Never shown on a page locked by an account check (dashboard.js).
+      if (result.interfaces.length < 2 || locked ||
+          document.body.dataset.accountLocked === 'true') { hide(); return; }
       show(result.interfaces);
     }
 
@@ -315,7 +403,11 @@
 
     hide();
     if (offline()) return;                // no server: no interfaces
-    refresh();
+    refresh(true);
+    // Re-check when the tab returns or the page is restored from history
+    // (another tab may have signed out or switched account meanwhile).
+    document.addEventListener('visibilitychange', () => { if (!document.hidden) refresh(false); });
+    window.addEventListener('pageshow', event => { if (event.persisted) refresh(false); });
 
     // Account changes: discard pending results and re-check for the new account.
     existingClient().then(client => {
@@ -326,7 +418,9 @@
           generation += 1;
           knownUser = null;
           hide();
-          revokeUiSessions();
+          // Also covers sign-out in another tab. Skipped right after an
+          // explicit, server-confirmed sign-out in this tab.
+          if (!recentlyEnded()) revokeUiSessions();
           lockInstitutionalPage('expired');
           return;
         }
@@ -336,23 +430,18 @@
           hide();
           revokeUiSessions();
           lockInstitutionalPage('expired');
-          setTimeout(refresh, 0);         // outside the auth callback
+          setTimeout(() => refresh(true), 0);   // outside the auth callback
         }
       });
     });
   }
 
-  // End both UI sessions whenever the user signs out, whichever page's
-  // existing sign-out code runs (the sign-out itself is unchanged).
-  function revokeOnLogout() {
-    const logout = document.getElementById('logoutButton');
-    if (logout) logout.addEventListener('click', revokeUiSessions, {capture: true});
-  }
+  // Used by the existing sign-out handlers (dashboard.js, session-header.js).
+  window.ProfileMatchUISessions = Object.freeze({end: endUiSessions});
 
   document.addEventListener('DOMContentLoaded', () => {
     const host = document.getElementById('roleSwitcher');
     if (host) build(host);
-    revokeOnLogout();
     watchInstitutionalSession();
   });
 })();

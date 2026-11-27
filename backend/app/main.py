@@ -4,11 +4,14 @@ from pathlib import Path
 from uuid import UUID
 
 import httpx
-from fastapi import FastAPI, HTTPException, Header
+from fastapi import Depends, FastAPI, HTTPException
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
 from app.config import SUPABASE_URL, SUPABASE_KEY
+
+# Phase 5.4.3B: application-wide account status for Innovator business APIs
+from app.core.account_status import ActiveAccount, require_active_user
 
 # Phase 4: Secure invention document processing
 from app.services.document_processor import (
@@ -52,13 +55,21 @@ ADMIN_UI_DIR = FRONTEND_DIR / "roles" / "administrator"
 # Industry Liaison, Management, Industry Partner and any future one).
 INSTITUTIONAL_UI_DIR = FRONTEND_DIR / "roles"
 
-# Public frontend files. Institutional folders are refused here and served
-# only through the authorized /admin and /institutional routes.
+# Development-only pages: never served publicly (Phase 5.4.4). The files are
+# kept on disk; ProtectedStaticFiles matches a protected path by its resolved
+# real path, so a single file is refused exactly like a folder (any case,
+# encoding, 8.3 short name or alias of it).
+DEVELOPMENT_ONLY_FILES = [FRONTEND_DIR / "phase4_test.html"]
+
+# Public frontend files. Institutional folders and development-only pages
+# are refused here; institutional pages are served only through the
+# authorized /admin and /institutional routes.
 app.mount(
     "/assets",
     ProtectedStaticFiles(
         directory=FRONTEND_DIR,
-        protected_directories=[ADMIN_UI_DIR, INSTITUTIONAL_UI_DIR]
+        protected_directories=[ADMIN_UI_DIR, INSTITUTIONAL_UI_DIR,
+                               *DEVELOPMENT_ONLY_FILES]
     ),
     name="assets"
 )
@@ -145,7 +156,7 @@ def database_health():
 )
 async def parse_invention_documents(
     invention_id: UUID,
-    authorization: str | None = Header(default=None)
+    account: ActiveAccount = Depends(require_active_user)
 ):
     """
     Parse private documents belonging to one invention.
@@ -153,6 +164,7 @@ async def parse_invention_documents(
     Security:
     - Requires Supabase Bearer token
     - Validates token through Supabase Auth
+    - Requires an active application-wide account (Phase 5.4.3B)
     - Confirms invention ownership
     - Uses private Supabase Storage
     - Does not use service-role credentials
@@ -160,29 +172,10 @@ async def parse_invention_documents(
     Returns extraction metadata and short text previews.
     """
 
-    # Step 1: Read the authorization header.
+    # Step 1: The require_active_user dependency has already verified the
+    # Bearer token (401) and the application-wide account status (403/503).
 
-    if not authorization:
-        raise HTTPException(
-            status_code=401,
-            detail="Authentication required.",
-            headers={"WWW-Authenticate": "Bearer"}
-        )
-
-    scheme, separator, token = authorization.partition(" ")
-
-    if (
-        not separator
-        or scheme.lower() != "bearer"
-        or not token.strip()
-    ):
-        raise HTTPException(
-            status_code=401,
-            detail="A valid Bearer token is required.",
-            headers={"WWW-Authenticate": "Bearer"}
-        )
-
-    access_token = token.strip()
+    access_token = account.access_token
 
     try:
         # Step 2: Verify user, ownership and documents.

@@ -631,6 +631,15 @@ class ApiErrorMappingTests(unittest.TestCase):
     def setUp(self):
         from fastapi.testclient import TestClient
         import app.main
+        from app.core.account_status import ActiveAccount, get_account_status_service
+
+        class ActiveAccountStatus:          # authentication mock: active account
+            async def verify_active(self, token):
+                return ActiveAccount(user_id=fx.OWNER_ID, access_token=token)
+
+        overrides = app.main.app.dependency_overrides
+        overrides[get_account_status_service] = ActiveAccountStatus
+        self.addCleanup(overrides.pop, get_account_status_service, None)
         self.client = TestClient(app.main.app)
 
     def post_generate(self, error):

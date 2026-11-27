@@ -10,8 +10,9 @@ Routes (all under /admin; the administrative UI cookie is scoped to /admin)
 
 Every /admin request is authorized BEFORE anything else: unauthorized callers
 get 401/403/503 and a small page with no Administrator content, whatever the
-path. Pages always re-verify the caller with Supabase; assets and the session
-status may reuse a verification made within REVALIDATE_SECONDS. Only files
+path. Every request (pages, assets and the session status) re-verifies the
+caller with Supabase, including the application-wide account status, and the
+UI session must still be live after that check. Only files
 listed in app.core.admin_pages are ever served, straight from the
 Administrator folder, so there is no path traversal surface. The public
 /assets mount refuses the same folder (app.core.admin_static).
@@ -31,7 +32,6 @@ from app.core.admin_pages import ASSETS, DEFAULT_PAGE, PAGES, REDIRECTS, can_ope
 from app.core.admin_ui_session import (
     COOKIE_NAME,
     COOKIE_PATH,
-    REVALIDATE_SECONDS,
     AdminUISession,
     AdminUISessionStore,
     SessionNotCreated,
@@ -178,27 +178,29 @@ def _denied(code: str, as_html: bool) -> Response:
     return JSONResponse({"detail": text, "code": code}, status_code=status, headers=SECURITY_HEADERS)
 
 
-async def _authorize(request: Request, store: AdminUISessionStore, service: AdminAccessService,
-                     *, force: bool) -> tuple[AdminUISession, AdminAccess]:
-    """Cookie -> server-side session -> (re)verified administrative access."""
+async def _authorize(request: Request, store: AdminUISessionStore,
+                     service: AdminAccessService) -> tuple[AdminUISession, AdminAccess]:
+    """Cookie -> server-side session -> freshly verified administrative access.
+
+    Every protected request re-verifies (Phase 5.4.3A: no reuse window), and
+    the session must still be live after the verification.
+    """
     session = store.get(request.cookies.get(COOKIE_NAME))
     if session is None:
         raise _Denied("no_session")
-    if not force and store.now() - session.validated_at < REVALIDATE_SECONDS:
-        access = session.access
-    else:
-        try:
-            access = await service.get_access(session.access_token)
-        except AdminAuthenticationError as error:
-            store.revoke_key(session.key)
-            raise _Denied("no_session") from error
-        except AdminAccessUnavailableError as error:
-            store.mark_stale(session.key)       # no cached access after a failed check
-            raise _Denied("unavailable") from error
-        if access.user_id != session.user_id:
-            store.revoke_key(session.key)
-            raise _Denied("no_session")
-        store.refresh(session.key, access)
+    try:
+        access = await service.get_access(session.access_token)
+    except AdminAuthenticationError as error:
+        store.revoke_key(session.key)
+        raise _Denied("no_session") from error
+    except AdminAccessUnavailableError as error:
+        raise _Denied("unavailable") from error
+    if access.user_id != session.user_id:
+        store.revoke_key(session.key)
+        raise _Denied("no_session")
+    if not store.is_live(session):              # revoked/expired during the check
+        raise _Denied("no_session")
+    store.record_verification(session, access)
     if not access.has_admin_role:
         store.revoke_user(session.user_id)
         raise _Denied("not_admin")
@@ -256,10 +258,11 @@ async def read_admin_ui_session(
     service: AdminAccessService = Depends(get_admin_access_service),
 ) -> Response:
     try:
-        session, access = await _authorize(request, store, service, force=False)
+        session, access = await _authorize(request, store, service)
     except _Denied as denied:
         return _denied(denied.code, False)
     return JSONResponse({
+        "user_id": access.user_id,
         "role": access.role.value,
         "account_status": access.status.value,
         "is_administrator": access.is_administrator,
@@ -291,7 +294,7 @@ async def _serve(request: Request, file_path: str, store: AdminUISessionStore,
     as_html = _wants_html(request, file_path)
     is_asset = file_path in ASSETS
     try:
-        _, access = await _authorize(request, store, service, force=not is_asset)
+        _, access = await _authorize(request, store, service)
     except _Denied as denied:
         return _denied(denied.code, as_html)
 

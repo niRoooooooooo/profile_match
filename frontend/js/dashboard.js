@@ -27,6 +27,256 @@ const dashboardNotice =
 const logoutButton =
     document.getElementById("logoutButton");
 
+// The whole Innovator workspace (navigation, inventions,
+// registration, uploads). Hidden in index.html itself (so it
+// never paints before authorization) and revealed only after
+// the server confirms that this account may use it.
+const appRoot =
+    document.querySelector("body > .app");
+
+if (appRoot) {
+    appRoot.hidden = true;
+}
+
+// "Checking account access..." line shown until a decision.
+function clearAccountCheckStatus() {
+    const pending = document.getElementById("accountCheckStatus");
+
+    if (pending) {
+        pending.remove();
+    }
+}
+
+
+// ========================================
+// 1b. APPLICATION-WIDE ACCOUNT ACCESS
+// ========================================
+//
+// GET /api/access/me (the existing unified authorization
+// endpoint) decides whether the dashboard may be used:
+//   200 for this user, account active -> dashboard
+//   401 -> existing sign-in behaviour (/login)
+//   403 -> "Account Restricted" (no business controls)
+//   anything else / network error -> "could not be checked"
+//         (never presented as a restriction)
+// An empty invention list is NEVER taken as a sign of a
+// restriction or of an active account.
+
+const ACCESS_URL = "/api/access/me";
+
+let accessGeneration = 0;
+let accountLocked = false;
+let accessConfirmed = false;
+
+function showAccessGate(title, text, withRetry) {
+
+    accountLocked = true;
+    document.body.dataset.accountLocked = "true";
+    clearAccountCheckStatus();
+
+    // Remove the workspace entirely: no records, registration,
+    // uploads, editing, deletion, generation or submission.
+    if (appRoot) {
+        appRoot.remove();
+    }
+
+    const switcher = document.getElementById("roleSwitcher");
+
+    if (switcher) {
+        switcher.hidden = true;
+        switcher.replaceChildren();
+    }
+
+    let gate = document.getElementById("accountGate");
+
+    if (!gate) {
+        gate = document.createElement("main");
+        gate.id = "accountGate";
+        gate.className = "content";
+        gate.tabIndex = -1;
+        document.body.append(gate);
+    }
+
+    const heading = document.createElement("h1");
+    heading.textContent = title;
+
+    const message = document.createElement("p");
+    message.setAttribute("role", "alert");
+    message.textContent = text;
+
+    gate.replaceChildren(heading, message);
+
+    if (withRetry) {
+        const retry = document.createElement("button");
+        retry.type = "button";
+        retry.className = "btn";
+        retry.textContent = "Try again";
+        retry.addEventListener("click", () => window.location.reload());
+        gate.append(retry);
+    }
+
+    // The header's existing Sign out button stays the only
+    // account control (existing secure sign-out flow).
+    gate.focus();
+}
+
+function showRestricted() {
+    showAccessGate(
+        "Account Restricted",
+        "Your account is currently restricted. Please contact the " +
+        "Administrator if you believe this is a mistake.",
+        false
+    );
+}
+
+function showAccessUnavailable() {
+    showAccessGate(
+        "Account access could not be checked",
+        "The authorization service is temporarily unavailable, so the " +
+        "dashboard is not shown. This does not mean your account is " +
+        "restricted. Please try again later.",
+        true
+    );
+}
+
+// Resolves to "active", "restricted", "unavailable",
+// "signed_out" or "stale" (a newer check or another account).
+async function checkAccountAccess(client, expectedUserId) {
+
+    const mine = ++accessGeneration;
+
+    let token = null;
+
+    try {
+        const { data } = await client.auth.getSession();
+        const session = data && data.session;
+
+        if (session && session.user && session.user.id === expectedUserId) {
+            token = session.access_token;
+        }
+    } catch (error) {
+        token = null;
+    }
+
+    if (!token) {
+        return "signed_out";
+    }
+
+    let outcome = "unavailable";
+
+    try {
+        const response = await fetch(ACCESS_URL, {
+            credentials: "same-origin",
+            cache: "no-store",
+            headers: {
+                Accept: "application/json",
+                Authorization: "Bearer " + token
+            }
+        });
+
+        if (response.status === 401) {
+            outcome = "signed_out";
+        } else if (response.status === 403) {
+            outcome = "restricted";
+        } else if (response.ok) {
+            const body = await response.json();
+            outcome = body
+                && body.user_id === expectedUserId
+                && body.account_status === "active"
+                && body.innovator === true
+                ? "active"
+                : "unavailable";
+        }
+    } catch (error) {
+        outcome = "unavailable";
+    }
+
+    // Ignore a response that a newer check replaced, or that
+    // belongs to an account no longer signed in here.
+    if (mine !== accessGeneration) {
+        return "stale";
+    }
+
+    try {
+        const { data } = await client.auth.getSession();
+        const current = data && data.session && data.session.user;
+
+        if (!current || current.id !== expectedUserId) {
+            return "stale";
+        }
+    } catch (error) {
+        return "stale";
+    }
+
+    return outcome;
+}
+
+// Applies a non-active outcome. Returns true if the page may
+// keep showing the dashboard.
+function applyAccessOutcome(outcome) {
+
+    if (outcome === "active") {
+        return true;
+    }
+
+    if (outcome === "signed_out") {
+        window.location.replace("/login");
+    } else if (outcome === "restricted") {
+        showRestricted();
+    } else if (outcome === "unavailable") {
+        showAccessUnavailable();
+    } else if (appRoot && appRoot.isConnected) {
+        // "stale": the account changed; never show its data.
+        appRoot.hidden = true;
+        window.location.reload();
+    }
+
+    return false;
+}
+
+// Re-check on tab return, history restoration and account
+// changes. A locked page is never unlocked without a reload.
+function watchAccountAccess(client, userId) {
+
+    const recheck = async () => {
+        if (accountLocked) {
+            return;
+        }
+        applyAccessOutcome(await checkAccountAccess(client, userId));
+    };
+
+    document.addEventListener("visibilitychange", () => {
+        if (!document.hidden) {
+            recheck();
+        }
+    });
+
+    window.addEventListener("pageshow", event => {
+        if (event.persisted) {
+            recheck();
+        }
+    });
+
+    if (client.auth && typeof client.auth.onAuthStateChange === "function") {
+        client.auth.onAuthStateChange((event, session) => {
+            const current = session && session.user ? session.user.id : null;
+
+            // This tab's own sign-out redirects by itself.
+            if (current !== userId && !signingOut) {
+                // Signed out or another account: hide this account's
+                // data at once, then start over for the new state.
+                accessGeneration += 1;
+
+                if (appRoot) {
+                    appRoot.hidden = true;
+                }
+
+                setTimeout(() => window.location.reload(), 0);
+            }
+        });
+    }
+}
+
 
 // ========================================
 // 2. SUPABASE CONFIGURATION
@@ -835,6 +1085,24 @@ async function loadDashboard() {
 
         const user = data.user;
 
+        // Confirm application-wide account access BEFORE any
+        // dashboard data is loaded or any control is shown.
+        const access =
+            await checkAccountAccess(client, user.id);
+
+        if (!applyAccessOutcome(access)) {
+            return;
+        }
+
+        accessConfirmed = true;
+        clearAccountCheckStatus();
+
+        if (appRoot) {
+            appRoot.hidden = false;
+        }
+
+        watchAccountAccess(client, user.id);
+
 
         // ========================================
         // 16. FETCH INNOVATOR PROFILE
@@ -893,6 +1161,13 @@ async function loadDashboard() {
             error
         );
 
+        // Failed before access was confirmed: the workspace is
+        // still hidden, so say that access could not be checked.
+        if (!accessConfirmed) {
+            showAccessUnavailable();
+            return;
+        }
+
         inventionList.replaceChildren();
 
         dashboardError.textContent =
@@ -906,9 +1181,36 @@ async function loadDashboard() {
 // 18. GOOGLE / SUPABASE SIGN OUT
 // ========================================
 
+// End the server-side interface sessions (Administrator and
+// institutional UI sessions) through the shared helper of the
+// interface switcher script. Bounded wait; never throws.
+async function endInterfaceSessions() {
+
+    const helper = window.ProfileMatchUISessions;
+
+    if (!helper || typeof helper.end !== "function") {
+        return { confirmed: false };
+    }
+
+    try {
+        return await helper.end();
+    } catch (error) {
+        return { confirmed: false };
+    }
+}
+
+let signingOut = false;
+
 logoutButton.addEventListener(
     "click",
     async () => {
+
+        // Prevent duplicate sign-out actions.
+        if (signingOut) {
+            return;
+        }
+
+        signingOut = true;
 
         logoutButton.disabled = true;
 
@@ -916,6 +1218,10 @@ logoutButton.addEventListener(
             "Signing out...";
 
         dashboardError.textContent = "";
+
+        // End the server UI sessions first and wait for the
+        // server to confirm (time-limited).
+        const ended = await endInterfaceSessions();
 
         try {
 
@@ -936,6 +1242,34 @@ logoutButton.addEventListener(
             window.profileMatchState.client = null;
             window.profileMatchState.user = null;
 
+            if (!ended.confirmed) {
+                // Signed out locally; the server did not confirm
+                // that the interface sessions ended. They expire
+                // on their own (15 minutes at most).
+                const text =
+                    "Signed out on this device. The server could not " +
+                    "confirm that interface sessions ended; they " +
+                    "expire within 15 minutes.";
+                const gate = document.getElementById("accountGate");
+
+                if (dashboardError.isConnected || !gate) {
+                    dashboardError.textContent = text;
+                } else {
+                    const note = document.createElement("p");
+                    note.setAttribute("role", "status");
+                    note.textContent = text;
+                    gate.append(note);
+                }
+
+                console.warn(
+                    "Interface sessions were not confirmed as ended."
+                );
+
+                await new Promise(
+                    resolve => setTimeout(resolve, 2500)
+                );
+            }
+
             // Redirect to Google login.
             window.location.replace("/login");
 
@@ -949,6 +1283,8 @@ logoutButton.addEventListener(
             dashboardError.textContent =
                 "Sign out failed: " +
                 error.message;
+
+            signingOut = false;
 
             logoutButton.disabled = false;
 

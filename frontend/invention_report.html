@@ -98,10 +98,14 @@
 <body>
   <header>
     <h1>Invention Reports</h1>
-    <p><a href="/dashboard" style="color:#175cd3">Back to dashboard</a></p>
+    <p><a href="/dashboard" style="color:#175cd3">Back to dashboard</a>
+       <button class="quiet" id="logoutButton" type="button" style="margin-left:12px">Sign out</button></p>
     <p>Generate an AI profile for each of your inventions. Review, edit and save your draft before submitting.</p>
   </header>
-  <main class="wrap">
+  <div class="wrap" id="accountGate" role="status" style="display:block">
+    <p class="status" id="accountGateText">Checking account access...</p>
+  </div>
+  <main class="wrap" id="reportWorkspace" hidden>
     <aside class="panel">
       <div class="side-head"><h2 style="margin:0">My inventions</h2><button class="quiet" id="refreshBtn" type="button">Refresh</button></div>
       <p class="small">Each invention has its own documents and AI report.</p>
@@ -601,7 +605,94 @@
       $('parseBtn').addEventListener('click',()=>void parse());
       $('viewModeBtn').addEventListener('click',()=>void setMode('view'));
       $('editModeBtn').addEventListener('click',()=>void setMode('edit'));
-      buttonVisibility();void loadAll();
+
+      // ---------------------------------------------------------------
+      // Phase 5.4.4: application-wide account access (same rules as the
+      // dashboard). The workspace stays hidden until GET /api/access/me
+      // confirms an active Innovator account for the signed-in user.
+      //   200 (same user, active) -> workspace; 403 -> "Account Restricted";
+      //   401 / no session -> sign-in message; anything else -> "could not
+      //   be checked" (never presented as a restriction).
+      // ---------------------------------------------------------------
+      const RESTRICTED_TEXT='Your account is currently restricted. Please contact the Administrator if you believe this is a mistake.';
+      let accountUser=null, accountGeneration=0, accountLocked=false, signingOut=false;
+      function accountGate(title,text,actions){
+        accountLocked=true;
+        const workspace=$('reportWorkspace');if(workspace)workspace.remove();   // no records or controls remain
+        if(saveTimer)clearTimeout(saveTimer);
+        const gate=$('accountGate');gate.hidden=false;gate.replaceChildren();
+        const h=elem('h2','',title),p=elem('p','status'+(actions.includes('retry')?'':' error'),text);p.setAttribute('role','alert');
+        gate.append(h,p);
+        if(actions.includes('retry')){const b=elem('button','secondary','Try again');b.type='button';b.addEventListener('click',()=>location.reload());gate.append(b);}
+        if(actions.includes('signin')){const a=elem('a','','Sign in');a.href='/login';a.style.color='#175cd3';gate.append(a);}
+      }
+      function accountRestricted(){accountGate('Account Restricted',RESTRICTED_TEXT,[]);}
+      function accountUnavailable(){accountGate('Account access could not be checked','The authorization service is temporarily unavailable, so your reports are not shown. This does not mean your account is restricted. Please try again later.',['retry']);}
+      function accountSignIn(){accountGate('Sign in required','Please log in through Google first.',['signin']);}
+      async function accountCheck(client,userId){
+        const mine=++accountGeneration;let outcome='unavailable';
+        try{
+          const {data}=await client.auth.getSession();const s=data&&data.session;
+          if(!s||!s.user||s.user.id!==userId)return 'signed_out';
+          const res=await fetch('/api/access/me',{credentials:'same-origin',cache:'no-store',headers:{Accept:'application/json',Authorization:`Bearer ${s.access_token}`}});
+          if(res.status===401)outcome='signed_out';
+          else if(res.status===403)outcome='restricted';
+          else if(res.ok){const b=await res.json();outcome=b&&b.user_id===userId&&b.account_status==='active'&&b.innovator===true?'active':'unavailable';}
+        }catch(e){outcome='unavailable';}
+        if(mine!==accountGeneration)return 'stale';                       // a newer check replaced this one
+        try{const {data}=await client.auth.getSession();if(!data.session||data.session.user.id!==userId)return 'stale';}catch(e){return 'stale';}
+        return outcome;
+      }
+      function accountApply(outcome){
+        if(outcome==='active')return true;
+        if(outcome==='restricted')accountRestricted();
+        else if(outcome==='signed_out')accountSignIn();
+        else if(outcome==='stale'){const w=$('reportWorkspace');if(w)w.hidden=true;location.reload();}
+        else accountUnavailable();
+        return false;
+      }
+      async function accountStart(){
+        let client;
+        try{
+          client=await window.getSupabase();
+          const {data,error}=await client.auth.getUser();
+          if(error||!data.user){accountSignIn();return;}
+          accountUser=data.user.id;
+        }catch(e){accountUnavailable();return;}
+        if(!accountApply(await accountCheck(client,accountUser)))return;
+        $('accountGate').hidden=true;$('reportWorkspace').hidden=false;
+        const recheck=async()=>{if(!accountLocked)accountApply(await accountCheck(client,accountUser));};
+        document.addEventListener('visibilitychange',()=>{if(!document.hidden)void recheck();});
+        window.addEventListener('pageshow',e=>{if(e.persisted)void recheck();});
+        client.auth.onAuthStateChange((event,s)=>{
+          const current=s&&s.user?s.user.id:null;
+          if(current!==accountUser&&!signingOut){accountGeneration++;const w=$('reportWorkspace');if(w)w.hidden=true;setTimeout(()=>location.reload(),0);}
+        });
+        buttonVisibility();void loadAll();
+      }
+      // A business API answering "restricted" mid-session locks the page too.
+      const accountApiBase=api;
+      api=async(...args)=>{try{return await accountApiBase(...args);}catch(e){if(e.status===403&&/This account is restricted\./.test(e.message))accountRestricted();throw e;}};
+
+      // Sign out: end the server UI sessions (bounded wait), then the
+      // existing local Supabase sign-out, then the login page.
+      async function accountEndUiSession(url){
+        const c=new AbortController(),t=setTimeout(()=>c.abort(),4000);
+        try{const r=await fetch(url,{method:'DELETE',credentials:'same-origin',cache:'no-store',keepalive:true,signal:c.signal});return r.ok;}
+        catch(e){return false;}finally{clearTimeout(t);}
+      }
+      $('logoutButton').addEventListener('click',async()=>{
+        if(signingOut)return;signingOut=true;
+        const b=$('logoutButton');b.disabled=true;b.textContent='Signing out...';
+        const ended=(await Promise.all(['/admin/session','/institutional/session'].map(accountEndUiSession))).every(Boolean);
+        try{
+          const client=await window.getSupabase();const {error}=await client.auth.signOut({scope:'local'});if(error)throw error;
+          if(!ended){const g=$('accountGate');g.hidden=false;g.append(elem('p','status','Signed out on this device. The server could not confirm that interface sessions ended; they expire within 15 minutes.'));await new Promise(r=>setTimeout(r,2500));}
+          location.replace('/login');
+        }catch(e){signingOut=false;b.disabled=false;b.textContent='Sign out';const g=$('accountGate');g.hidden=false;g.append(elem('p','status error','Sign out failed: '+e.message));}
+      });
+
+      void accountStart();
     });
   </script>
 </body>

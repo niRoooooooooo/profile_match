@@ -6,9 +6,10 @@ Register this NEW router in app.main after reviewing the current main.py.
 from typing import Annotated
 from uuid import UUID
 
-from fastapi import APIRouter, Header, HTTPException, Response
+from fastapi import APIRouter, Depends, HTTPException, Response
 from pydantic import BaseModel, ConfigDict, Field
 
+from app.core.account_status import ActiveAccount, require_active_user
 from app.services.profile_submission_service import (
     ProfileSubmissionService, JSON_MIME, DOCX_MIME,
 )
@@ -23,13 +24,12 @@ class SubmitBody(BaseModel):
     expected_updated_at: str = Field(min_length=1, max_length=100)
 
 
-def token_from_header(authorization: str | None):
-    if not authorization:
-        raise HTTPException(status_code=401, detail="Authentication required.")
-    scheme, sep, token = authorization.partition(" ")
-    if not sep or scheme.lower() != "bearer" or not token.strip():
-        raise HTTPException(status_code=401, detail="A valid Bearer token is required.")
-    return token.strip()
+async def active_token(account: ActiveAccount = Depends(require_active_user)) -> str:
+    """Phase 5.4.3B: authenticated caller with an ACTIVE application-wide
+    account (401 / 403 / 503 otherwise). Runs before the route body, so no
+    secret-key storage operation happens first. Ownership is still checked
+    by ProfileSubmissionService."""
+    return account.access_token
 
 
 def http_error(error: Exception):
@@ -48,10 +48,9 @@ def http_error(error: Exception):
 async def submit_profile(
     invention_id: UUID,
     body: SubmitBody,
-    authorization: Annotated[str | None, Header()] = None,
+    token: Annotated[str, Depends(active_token)],
 ):
     """Innovator submission; NOT management approval."""
-    token = token_from_header(authorization)
     try:
         return await ProfileSubmissionService().submit(
             str(invention_id), token, body.expected_updated_at
@@ -63,9 +62,8 @@ async def submit_profile(
 @router.get("/{invention_id}/profile/submissions")
 async def list_profile_submissions(
     invention_id: UUID,
-    authorization: Annotated[str | None, Header()] = None,
+    token: Annotated[str, Depends(active_token)],
 ):
-    token = token_from_header(authorization)
     try:
         return await ProfileSubmissionService().list_submissions(str(invention_id), token)
     except (ProfileServiceError, ValueError, TypeError) as exc:
@@ -77,9 +75,8 @@ async def download_profile_submission(
     invention_id: UUID,
     submission_id: str,
     format_: str,
-    authorization: Annotated[str | None, Header()] = None,
+    token: Annotated[str, Depends(active_token)],
 ):
-    token = token_from_header(authorization)
     try:
         content = await ProfileSubmissionService().get_report(
             str(invention_id), token, submission_id, format_

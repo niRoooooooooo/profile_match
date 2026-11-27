@@ -156,6 +156,10 @@ class StructureAndIsolationTests(unittest.TestCase):
             '    <script src="/assets/js/role-switcher.js" defer></script>\n', "")
         stripped = stripped.replace('<body data-role="innovator">', "<body>")
         stripped = stripped.replace('    <div id="roleSwitcher"></div>\n', "")
+        # Phase 5.4.4: workspace hidden until account authorization succeeds.
+        stripped = stripped.replace('<p id="accountCheckStatus" class="content muted" role="status">\n'
+                                    '    Checking account access...\n</p>\n\n', "")
+        stripped = stripped.replace('<div class="app" hidden>', '<div class="app">')
         self.assertEqual(stripped.replace("\r\n", "\n"), head.stdout.replace("\r\n", "\n"))
 
     def test_protected_auth_files_untouched_by_roles(self):
@@ -195,8 +199,218 @@ class StructureAndIsolationTests(unittest.TestCase):
             self.assertEqual(client.get(f"/institutional/{role}/index.html").status_code, 404)
         # Shared frontend files needed by the Innovator dashboard stay public.
         for path in ("/assets/css/style.css", "/assets/css/roles.css", "/assets/js/api.js",
-                     "/assets/js/role-switcher.js", "/assets/js/dashboard.js"):
+                     "/assets/js/role-switcher.js", "/assets/js/dashboard.js",
+                     "/assets/invention_report.html"):
             self.assertEqual(client.get(path).status_code, 200, path)
+
+    def test_development_test_page_is_never_public(self):
+        # Phase 5.4.4: the file stays on disk but is never served.
+        import _fixtures  # noqa: F401  (adds backend to sys.path)
+        from fastapi.testclient import TestClient
+        from app.main import app
+
+        self.assertTrue((FRONTEND / "phase4_test.html").is_file())
+        client = TestClient(app)
+        for path in ("/assets/phase4_test.html", "/assets/PHASE4_TEST.HTML", "/assets/Phase4_Test.html",
+                     "/assets/%70hase4_test.html", "/assets/phase4_test.html.", "/assets/phase4_test.html%20",
+                     "/assets/phase4_test.html::$DATA", "/assets/PHASE4~1.HTM", "/assets/css/../phase4_test.html",
+                     "/assets/css/..%2fphase4_test.html", "/assets//phase4_test.html", "/assets/./phase4_test.html",
+                     "/phase4_test.html"):
+            self.assertEqual(client.get(path).status_code, 404, path)
+
+
+class AuthorizationServiceTests(unittest.TestCase):
+    """Phase 5.4.4: permanent checks of the REAL Administrator and institutional
+    authorization services and routes against a simulated Supabase (no network).
+
+    A regression that made the Administrator service unusable once passed the
+    whole suite unnoticed; these tests exercise it end to end.
+    """
+
+    IC = "innovation_center."
+
+    def setUp(self):
+        import base64
+        import time
+        import uuid
+
+        import _fixtures  # noqa: F401  (adds backend to sys.path)
+        import httpx
+        from fastapi.testclient import TestClient
+        from app.main import app
+        from app.core.admin_access import get_admin_access_service
+        from app.core.institutional_access import get_institutional_access_service
+        from app.services.admin_access_service import AdminAccessService
+        from app.services.institutional_access_service import InstitutionalAccessService
+
+        admin = {"role": "administrator", "status": "active", "permissions": []}
+        staff = {"role": "admin_employee", "status": "active", "permissions": ["users.view"]}
+        member = lambda position, perms=(): [{"actor": "innovation_center", "position": position,
+                                              "status": "active", "permissions": list(perms)}]
+        self.users = {
+            "admin": {"admin": admin, "memberships": []},
+            "staff": {"admin": staff, "memberships": []},
+            "ordinary": {"admin": None, "memberships": []},
+            "head": {"admin": None, "memberships": member("head")},
+            "employee": {"admin": None, "memberships": member("employee", [
+                self.IC + "inventions.view", self.IC + "profiles.review",
+                self.IC + "profiles.approve", "industry_liaison.matches.view"])},
+        }
+        for row in self.users.values():
+            row["uid"] = str(uuid.uuid4())
+            row["record"] = None           # None = normal record with account_status null
+
+        def handler(request):
+            name = request.headers.get("authorization", "")[7:].rsplit(".", 1)[-1]
+            row, path = self.users.get(name), request.url.path
+            if path.endswith("/auth/v1/user"):
+                return httpx.Response(200, json={"id": row["uid"]}) if row else httpx.Response(401, json={})
+            if path.endswith("/rpc/admin_get_my_access"):
+                if row["admin"] is None:
+                    return httpx.Response(200, content=b"null", headers={"Content-Type": "application/json"})
+                return httpx.Response(200, json={"user_id": row["uid"], **row["admin"]})
+            if path.endswith("/rpc/institutional_get_my_access"):
+                record = row["record"]
+                if callable(record):
+                    return record(row)
+                return httpx.Response(200, json={"user_id": row["uid"], "account_status": None,
+                                                 "memberships": row["memberships"]})
+            return httpx.Response(404, json={})
+
+        transport = httpx.MockTransport(handler)
+        self.admin_service = AdminAccessService("https://example.supabase.co", "sb_publishable_test",
+                                                transport=transport)
+        institutional = InstitutionalAccessService(self.admin_service, "https://example.supabase.co",
+                                                   "sb_publishable_test", transport=transport)
+        overrides = app.dependency_overrides
+        overrides[get_admin_access_service] = lambda: self.admin_service
+        overrides[get_institutional_access_service] = lambda: institutional
+        self.addCleanup(overrides.pop, get_admin_access_service, None)
+        self.addCleanup(overrides.pop, get_institutional_access_service, None)
+        self.app, self.TestClient, self.httpx = app, TestClient, httpx
+
+        def token(name):
+            claims = base64.urlsafe_b64encode(json.dumps({"exp": int(time.time()) + 3600}).encode())
+            return "h." + claims.decode().rstrip("=") + "." + name
+        self.token = token
+
+    def client(self):
+        return self.TestClient(self.app, base_url="http://localhost")
+
+    def bearer(self, name):
+        return {"Authorization": "Bearer " + self.token(name)}
+
+    def start(self, client, kind, name):
+        return client.post(f"/{kind}/session", headers={"Origin": "http://localhost", **self.bearer(name)})
+
+    def set_record(self, name, body=None, status=200, raw=None):
+        httpx = self.httpx
+        def record(row):
+            if raw is not None:
+                return httpx.Response(status, content=raw, headers={"Content-Type": "application/json"})
+            payload = body(row) if callable(body) else body
+            return httpx.Response(status, json=payload)
+        self.users[name]["record"] = record
+
+    def test_administrator_service_methods_remain_callable(self):
+        import asyncio
+        for method in ("get_access", "get_access_and_record", "_fetch_own_record", "_interpret",
+                       "_account_status"):
+            self.assertTrue(callable(getattr(self.admin_service, method, None)), method)
+        access, record = asyncio.run(self.admin_service.get_access_and_record(self.token("admin")))
+        self.assertTrue(access.is_administrator and access.is_active)
+        self.assertEqual(len(access.effective_permissions), 24)
+        self.assertEqual(record["user_id"], self.users["admin"]["uid"])
+
+    def test_active_administrator_has_24_permissions_and_ui(self):
+        response = self.client().get("/api/admin/access/me", headers=self.bearer("admin"))
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(len(response.json()["permissions"]), 24)
+        client = self.client()
+        self.assertEqual(self.start(client, "admin", "admin").status_code, 200)
+        self.assertEqual(client.get("/admin/overview.html").status_code, 200)
+        self.assertEqual(len(client.get("/admin/session").json()["permissions"]), 24)
+        # No institutional access without an explicit membership.
+        self.assertEqual(self.start(self.client(), "institutional", "admin").status_code, 403)
+
+    def test_admin_employee_permission_isolation(self):
+        response = self.client().get("/api/admin/access/me", headers=self.bearer("staff"))
+        self.assertEqual(response.json()["permissions"], ["users.view"])
+        interfaces = self.client().get("/api/access/me", headers=self.bearer("staff")).json()["interfaces"]
+        self.assertEqual([(i["id"], i["label"]) for i in interfaces],
+                         [("innovator", "Innovator / Researcher"), ("administrator", "Admin Employee")])
+
+    def test_ordinary_innovator_access(self):
+        client = self.client()
+        self.assertEqual(client.get("/api/admin/access/me", headers=self.bearer("ordinary")).status_code, 403)
+        me = client.get("/api/access/me", headers=self.bearer("ordinary")).json()
+        self.assertEqual([i["id"] for i in me["interfaces"]], ["innovator"])
+        self.assertIsNone(me["administrator"])
+        self.assertEqual(self.start(client, "admin", "ordinary").status_code, 403)
+        self.assertEqual(self.start(client, "institutional", "ordinary").status_code, 403)
+        self.assertEqual(client.get("/institutional/innovation-center/overview.html").status_code, 401)
+
+    def test_institutional_head_and_employee(self):
+        head = self.client()
+        self.assertEqual(self.start(head, "institutional", "head").status_code, 200)
+        session = head.get("/institutional/session").json()["actors"]["innovation_center"]
+        self.assertEqual((session["position"], len(session["permissions"])), ("head", 11))
+        self.assertEqual(head.get("/institutional/innovation-center/portfolio.html").status_code, 200)
+        employee = self.client()
+        self.assertEqual(self.start(employee, "institutional", "employee").status_code, 200)
+        session = employee.get("/institutional/session").json()["actors"]["innovation_center"]
+        self.assertEqual(session["permissions"], [self.IC + "inventions.view", self.IC + "profiles.review"])
+        self.assertEqual(employee.get("/institutional/innovation-center/profile-approvals.html").status_code, 200)
+        self.assertEqual(employee.get("/institutional/innovation-center/portfolio.html").status_code, 403)
+
+    def test_suspended_banned_and_unknown_accounts_are_refused(self):
+        for status in ("suspended", "banned", "archived"):
+            for name in ("admin", "head"):
+                self.set_record(name, lambda row, s=status: {"user_id": row["uid"], "account_status": s,
+                                                             "memberships": row["memberships"]})
+            client = self.client()
+            self.assertEqual(client.get("/api/admin/access/me", headers=self.bearer("admin")).status_code, 403)
+            self.assertEqual(client.get("/api/access/me", headers=self.bearer("admin")).status_code, 403)
+            self.assertEqual(self.start(client, "admin", "admin").status_code, 403, status)
+            self.assertEqual(self.start(client, "institutional", "head").status_code, 403, status)
+
+    def test_restriction_during_an_admin_session_ends_it(self):
+        client = self.client()
+        self.assertEqual(self.start(client, "admin", "admin").status_code, 200)
+        self.set_record("admin", lambda row: {"user_id": row["uid"], "account_status": "banned",
+                                              "memberships": []})
+        self.assertEqual(client.get("/admin/overview.html").status_code, 403)
+        self.users["admin"]["record"] = None
+        self.assertEqual(client.get("/admin/overview.html").status_code, 401)     # not restored
+
+    def test_explicit_null_status_is_active(self):
+        self.set_record("admin", lambda row: {"user_id": row["uid"], "account_status": None, "memberships": []})
+        self.assertEqual(self.client().get("/api/admin/access/me", headers=self.bearer("admin")).status_code, 200)
+
+    def test_malformed_mismatched_or_unavailable_records_fail_closed(self):
+        import uuid
+        cases = (dict(body=lambda row: {"user_id": row["uid"], "memberships": []}),         # field missing
+                 dict(body=lambda row: {"user_id": row["uid"], "account_status": 7, "memberships": []}),
+                 dict(body=lambda row: {"account_status": None, "memberships": []}),        # no identity
+                 dict(body=lambda row: {"user_id": str(uuid.uuid4()), "account_status": None,
+                                        "memberships": []}),                                # mismatched
+                 dict(body=[{"account_status": None}]),                                     # not an object
+                 dict(raw=b"null"), dict(raw=b"<html>"),
+                 dict(body={"code": "PGRST202"}, status=404),                               # function missing
+                 dict(body={}, status=503))                                                 # outage
+        for case in cases:
+            for name in ("admin", "head"):
+                self.set_record(name, **case)
+            client = self.client()
+            for path in ("/api/admin/access/me", "/api/access/me"):
+                self.assertEqual(client.get(path, headers=self.bearer("admin")).status_code, 503, (case, path))
+            self.assertEqual(self.start(client, "admin", "admin").status_code, 503, case)
+            self.assertEqual(self.start(client, "institutional", "head").status_code, 503, case)
+
+    def test_invalid_token_is_401(self):
+        client = self.client()
+        self.assertEqual(client.get("/api/admin/access/me", headers=self.bearer("nobody")).status_code, 401)
+        self.assertEqual(client.get("/api/access/me").status_code, 401)
 
 
 # --------------------------------------------------------------------------
@@ -517,7 +731,8 @@ class BrowserTests(unittest.TestCase):
     il: {id: 'industry_liaison', label: 'Industry Liaison', href: null, available: false}};
   const me = (user, list, wait) => ({status: 200, wait, body: {user_id: user, account_status: 'active',
                                                               interfaces: list}});
-  const icSession = {status: 200, body: {actors: {innovation_center: {}}, expires_at: Date.now() / 1000 + 900}};
+  const icSession = {status: 200, body: {user_id: 'U1', actors: {innovation_center: {}},
+                                         expires_at: Date.now() / 1000 + 900}};
   async function mount(role, plan, settle) {
     window.currentPlan = plan;
     frame.srcdoc = `<!DOCTYPE html><html><body data-role="${role}"><header>
@@ -536,7 +751,8 @@ class BrowserTests(unittest.TestCase):
                              Boolean(options && options.headers && options.headers.Authorization)]);
           const answer = window.plan.respond(String(url), method, window.plan.user) || {status: 404, body: {}};
           if (answer.wait) await new Promise(r => setTimeout(r, answer.wait));
-          return new Response(JSON.stringify(answer.body || {}), {status: answer.status,
+          return new Response(answer.status === 204 ? null : JSON.stringify(answer.body || {}),
+                              {status: answer.status,
                               headers: {'Content-Type': 'application/json'}});
         };
       <\/script><script src="${SWITCHER}"><\/script></body></html>`;
@@ -568,7 +784,11 @@ class BrowserTests(unittest.TestCase):
   out.focusNext = d.activeElement.dataset.interfaceId;
   d.activeElement.dispatchEvent(new win.KeyboardEvent('keydown', {key: 'Escape', bubbles: true}));
   out.closed = d.querySelector('.role-switcher-panel').hidden && d.activeElement === button;
-  d.getElementById('logoutButton').click(); await wait(50);
+  // Sign-out: the existing sign-out handlers call this shared helper, which
+  // ends both server UI sessions and waits for confirmation.
+  win.plan.respond = (url, method) => method === 'DELETE' ? {status: 204} : null;
+  const ended = await win.ProfileMatchUISessions.end();
+  out.logoutConfirmed = ended.confirmed;
   out.logout = win.calls.filter(c => c[1] === 'DELETE').map(c => c[0]).sort();
   out.tokenInUrl = win.calls.some(c => c[0].includes('test-token'));
   out.bearerTo = [...new Set(win.calls.filter(c => c[2]).map(c => c[0]))];
@@ -630,6 +850,7 @@ class BrowserTests(unittest.TestCase):
         self.assertEqual((out["focus"], out["focusNext"]), ("innovator", "administrator"))
         self.assertTrue(out["closed"])
         self.assertEqual(out["logout"], sessions)
+        self.assertTrue(out["logoutConfirmed"])
         self.assertFalse(out["tokenInUrl"])
         self.assertEqual(out["bearerTo"], ["/api/access/me"])
         self.assertEqual(out["staff"], [["Innovator / Researcher", "/dashboard"],

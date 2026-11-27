@@ -14,8 +14,8 @@ actor path is a 404. Every request is authorized BEFORE anything else:
 unauthorized callers get 401/403/503 and a small page with no institutional
 content, whatever the path. Authorization comes only from the server:
 the cookie points to a server-side session, and the caller's account status,
-membership and permissions are re-read from Supabase (pages: every request;
-assets and the session status: at most REVALIDATE_SECONDS old). Administrators
+membership and permissions are re-read from Supabase on every request (pages,
+assets and the session status; no reuse window). Administrators
 get no institutional access without an explicit membership.
 
 This reuses the existing UI session store class and HTTP helpers of the
@@ -34,7 +34,6 @@ from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, Resp
 from app.api.admin_ui import SECURITY_HEADERS, _cookie_secure, _same_origin
 from app.core.admin_access import bearer_token
 from app.core.admin_ui_session import (
-    REVALIDATE_SECONDS,
     AdminUISession,
     AdminUISessionStore,
     SessionNotCreated,
@@ -171,27 +170,29 @@ def _not_found() -> Response:
 
 
 async def _authorize(request: Request, store: AdminUISessionStore,
-                     service: InstitutionalAccessService, *, force: bool
+                     service: InstitutionalAccessService
                      ) -> tuple[AdminUISession, InstitutionalAccess]:
-    """Cookie -> server-side session -> (re)verified institutional access."""
+    """Cookie -> server-side session -> freshly verified institutional access.
+
+    Every protected request re-verifies (Phase 5.4.3A: no reuse window), and
+    the session must still be live after the verification.
+    """
     session = store.get(request.cookies.get(COOKIE_NAME))
     if session is None:
         raise _Denied("no_session")
-    if not force and store.now() - session.validated_at < REVALIDATE_SECONDS:
-        access: InstitutionalAccess = session.access          # type: ignore[assignment]
-    else:
-        try:
-            access = await service.get_access(session.access_token)
-        except AccessAuthenticationError as error:
-            store.revoke_key(session.key)
-            raise _Denied("no_session") from error
-        except AccessUnavailableError as error:
-            store.mark_stale(session.key)       # no cached access after a failed check
-            raise _Denied("unavailable") from error
-        if access.user_id != session.user_id:
-            store.revoke_key(session.key)
-            raise _Denied("no_session")
-        store.refresh(session.key, access)      # type: ignore[arg-type]
+    try:
+        access = await service.get_access(session.access_token)
+    except AccessAuthenticationError as error:
+        store.revoke_key(session.key)
+        raise _Denied("no_session") from error
+    except AccessUnavailableError as error:
+        raise _Denied("unavailable") from error
+    if access.user_id != session.user_id:
+        store.revoke_key(session.key)
+        raise _Denied("no_session")
+    if not store.is_live(session):              # revoked/expired during the check
+        raise _Denied("no_session")
+    store.record_verification(session, access)
     if not access.account_active:
         store.revoke_user(session.user_id)
         raise _Denied("restricted")
@@ -255,7 +256,7 @@ async def read_institutional_ui_session(
     service: InstitutionalAccessService = Depends(get_institutional_access_service),
 ) -> Response:
     try:
-        session, access = await _authorize(request, store, service, force=False)
+        session, access = await _authorize(request, store, service)
     except _Denied as denied:
         return _denied(denied.code, False)
     actors = {}
@@ -319,9 +320,8 @@ async def _serve(request: Request, slug: str, file_path: str, store: AdminUISess
         return _not_found()
     as_html = _wants_html(request, ui, file_path)
     item = ui.files.get(file_path)
-    is_asset = item is not None and not item.is_page
     try:
-        _, access = await _authorize(request, store, service, force=not is_asset)
+        _, access = await _authorize(request, store, service)
     except _Denied as denied:
         return _denied(denied.code, as_html, ui)
     if not access.can_access_actor(ui.actor):

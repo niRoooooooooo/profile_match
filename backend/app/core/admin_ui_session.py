@@ -32,9 +32,9 @@ from app.services.admin_access_service import AdminAccess
 COOKIE_NAME = "pm_admin_ui"
 COOKIE_PATH = "/admin"
 SESSION_TTL_SECONDS = 15 * 60
-# Pages are always re-verified; assets (CSS/JS) and the session status may
-# reuse a verification this recent.
-REVALIDATE_SECONDS = 30
+# Phase 5.4.3A: there is no authorization reuse window. Every protected
+# request (pages, assets and the session status) re-verifies access, and the
+# session must still be live after that verification (see is_live).
 MIN_REMAINING_SECONDS = 30
 MAX_SESSIONS = 1000
 MAX_SESSIONS_PER_USER = 5
@@ -97,10 +97,11 @@ class AdminUISessionStore:
     def create(self, access: AdminAccess, access_token: str) -> tuple[str, AdminUISession]:
         """Issue a NEW random identifier (never reuses a client-supplied one)."""
         now = self._clock()
-        expires_at = now + self._ttl
         token_exp = token_expiry(access_token)
-        if token_exp is not None:
-            expires_at = min(expires_at, token_exp)
+        if token_exp is None:
+            # The session must never outlive the token; unknown expiry -> refuse.
+            raise SessionNotCreated("The sign-in session has no readable expiry.")
+        expires_at = min(now + self._ttl, token_exp)
         if expires_at - now < MIN_REMAINING_SECONDS:
             raise SessionNotCreated("The sign-in session is about to expire.")
 
@@ -136,19 +137,25 @@ class AdminUISessionStore:
                 return None
             return session
 
-    def refresh(self, key: str, access: AdminAccess) -> None:
+    def is_live(self, session: AdminUISession) -> bool:
+        """Still this exact, unexpired session (not revoked or replaced).
+
+        Checked AFTER the asynchronous re-verification, so a session revoked
+        or expired while that check was running (logout, account switch,
+        restriction found by a concurrent request) is never used to serve
+        content.
+        """
         with self._lock:
-            session = self._sessions.get(key)
-            if session is not None:
+            return (self._sessions.get(session.key) is session
+                    and session.expires_at > self._clock())
+
+    def record_verification(self, session: AdminUISession, access) -> None:
+        """Remember the latest verified access (information only, never reused
+        for authorization)."""
+        with self._lock:
+            if self._sessions.get(session.key) is session:
                 session.access = access
                 session.validated_at = self._clock()
-
-    def mark_stale(self, key: str) -> None:
-        """Force the next request to re-verify (e.g. after a failed check)."""
-        with self._lock:
-            session = self._sessions.get(key)
-            if session is not None:
-                session.validated_at = float("-inf")
 
     def revoke(self, raw: str | None) -> bool:
         if not isinstance(raw, str) or not _ID_PATTERN.match(raw):

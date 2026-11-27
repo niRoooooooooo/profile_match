@@ -5,7 +5,8 @@ Composition, no duplication
    the existing document_processor.verify_user) and returns the caller's
    Administrator access exactly as today. It remains the only source of
    Administrator authority.
-2. The caller's institutional record is then read with the same token from
+2. The caller's institutional record is read with the same token (by the
+   administrative service, concurrently, so it is fetched once) from
    the SECURITY DEFINER function public.institutional_get_my_access(), which
    returns only the caller's own application-wide account status and
    memberships (keyed on auth.uid()).
@@ -21,7 +22,6 @@ from __future__ import annotations
 import logging
 from dataclasses import dataclass, field, replace
 from urllib.parse import urlparse
-from uuid import UUID
 
 import httpx
 
@@ -42,21 +42,22 @@ from app.core.institutional_roles import (
     Interface,
     MembershipStatus,
     Position,
-    parse_account_status,
     parse_actor,
     parse_membership_status,
     parse_position,
 )
 from app.services.admin_access_service import (
+    ACCOUNT_RECORD_FUNCTION,
     AdminAccess,
     AdminAccessService,
     AdminAccessUnavailableError,
     AdminAuthenticationError,
+    parse_account_record,
 )
 
 logger = logging.getLogger(__name__)
 
-ACCESS_FUNCTION = "institutional_get_my_access"
+ACCESS_FUNCTION = ACCOUNT_RECORD_FUNCTION      # "institutional_get_my_access"
 
 # Same error types as the administrative layer: 401 / 503 semantics.
 AccessAuthenticationError = AdminAuthenticationError
@@ -184,58 +185,19 @@ class InstitutionalAccessService:
         self._transport = transport
 
     async def get_access(self, access_token: str) -> InstitutionalAccess:
-        # Verifies the token and returns existing Administrator access.
-        admin = await self._admin.get_access(access_token)
-        record = await self._fetch_own_record(access_token.strip())
+        # One verification: the existing administrative service verifies the
+        # token, reads Administrator access and the caller's own institutional
+        # record (public.institutional_get_my_access, which it also uses for the
+        # application-wide account status). Errors keep their 401/503 meaning.
+        admin, record = await self._admin.get_access_and_record(access_token)
         return self._interpret(admin, record)
-
-    async def _fetch_own_record(self, token: str) -> dict:
-        try:
-            async with httpx.AsyncClient(timeout=self._timeout, transport=self._transport) as client:
-                response = await client.post(
-                    f"{self._url}/rest/v1/rpc/{ACCESS_FUNCTION}",
-                    headers={"apikey": self._key, "Authorization": f"Bearer {token}",
-                             "Accept": "application/json", "Content-Type": "application/json"},
-                    json={},
-                )
-        except httpx.HTTPError as error:
-            raise AccessUnavailableError("Authorization database is unreachable.") from error
-
-        if response.status_code == 401:
-            raise AccessAuthenticationError("Invalid or expired session.")
-        if response.status_code >= 400:
-            code = None
-            try:
-                body = response.json()
-                code = body.get("code") if isinstance(body, dict) else None
-            except ValueError:
-                pass
-            logger.warning("Institutional access lookup failed: HTTP %s, code %s",
-                           response.status_code, code)
-            raise AccessUnavailableError("Institutional authorization is not available.")
-        try:
-            data = response.json()
-        except ValueError as error:
-            raise AccessUnavailableError("Unexpected authorization response.") from error
-        # The function always returns an object for the caller; anything else
-        # (including null) means the infrastructure is not as expected.
-        if not isinstance(data, dict):
-            raise AccessUnavailableError("Unexpected authorization response.")
-        return data
 
     @staticmethod
     def _interpret(admin: AdminAccess, record: dict) -> InstitutionalAccess:
         user_id = admin.user_id
-        try:
-            record_user = str(UUID(str(record.get("user_id"))))
-        except (TypeError, ValueError) as error:
-            raise AccessUnavailableError("Unexpected authorization response.") from error
-        if record_user != user_id:
-            raise AccessUnavailableError("Authorization record does not match the session.")
-
-        raw_status = record.get("account_status")
-        # No status row = never restricted = active. Unknown text = restricted.
-        account_status = AccountStatus.ACTIVE if raw_status is None else parse_account_status(raw_status)
+        # The one shared parser: identity, presence and type of account_status
+        # (malformed -> 503; null -> active; unknown text -> restricted).
+        account_status = parse_account_record(user_id, record)
 
         raw_memberships = record.get("memberships")
         if not isinstance(raw_memberships, list):

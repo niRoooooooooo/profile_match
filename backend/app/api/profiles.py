@@ -7,10 +7,11 @@ from uuid import UUID
 from fastapi import (
     APIRouter,
     Depends,
-    Header,
     HTTPException,
 )
 from pydantic import BaseModel, ConfigDict, Field
+
+from app.core.account_status import ActiveAccount, require_active_user
 
 from app.services.profile_service import (
     ProfileService,
@@ -140,43 +141,23 @@ class SaveProfileDraftRequest(BaseModel):
 # Authentication
 # --------------------------------------------------
 
-def require_access_token(
-    authorization: str | None = Header(default=None)
+async def require_access_token(
+    account: ActiveAccount = Depends(require_active_user)
 ) -> str:
     """
-    Extract the Supabase Bearer token.
+    The Supabase Bearer token of an authenticated caller
+    whose application-wide account is ACTIVE.
 
-    Actual token validation and ownership checks
-    are performed by ProfileService.
+    Phase 5.4.3B: runs before every route body, so a
+    missing/invalid token (401), a suspended, banned or
+    unknown account (403) or an unavailable or malformed
+    status lookup (503) stops the request before any
+    ownership check, Gemini call or secret-key operation.
+
+    Ownership checks are still performed by ProfileService.
     """
 
-    if not authorization:
-        raise HTTPException(
-            status_code=401,
-            detail="Authentication required.",
-            headers={
-                "WWW-Authenticate": "Bearer"
-            }
-        )
-
-    scheme, separator, token = (
-        authorization.partition(" ")
-    )
-
-    if (
-        not separator
-        or scheme.lower() != "bearer"
-        or not token.strip()
-    ):
-        raise HTTPException(
-            status_code=401,
-            detail="A valid Bearer token is required.",
-            headers={
-                "WWW-Authenticate": "Bearer"
-            }
-        )
-
-    return token.strip()
+    return account.access_token
 
 
 # --------------------------------------------------

@@ -16,6 +16,7 @@ import httpx
 from dotenv import load_dotenv
 from pydantic import ValidationError
 
+from app.core.account_status import ensure_active_account
 from app.schemas.profile import InventionAIProfile
 from app.services.report_docx import build_submission_docx
 from app.services.profile_service import (
@@ -111,6 +112,9 @@ class ProfileSubmissionService:
         latest = await self.profile_service.get_draft(invention_id, access_token)
         if not latest or latest["updated_at"] != expected_updated_at:
             raise ProfileConflictError("The draft changed before submission. Reload and try again.")
+        # Phase 5.4.3B.3: fresh account check before the first privileged
+        # (secret-key) storage write. Restricted -> 403, nothing uploaded.
+        await ensure_active_account(access_token, expected_user_id=owner_id)
 
         paths = [prefix + "/profile.json", prefix + "/profile.docx"]
         uploaded = []
@@ -119,9 +123,14 @@ class ProfileSubmissionService:
                 try:
                     await self._upload(client, paths[0], json_bytes, JSON_MIME)
                     uploaded.append(paths[0])
+                    # Re-check before the upload that completes (publishes) the
+                    # submission. On any failure, only THIS submission's new,
+                    # uniquely named files are removed; earlier submissions live
+                    # under other submission IDs and are never touched.
+                    await ensure_active_account(access_token, expected_user_id=owner_id)
                     await self._upload(client, paths[1], docx_bytes, DOCX_MIME)
                     uploaded.append(paths[1])
-                except Exception:
+                except BaseException:
                     await self._delete_uploaded(client, uploaded)
                     raise
         except httpx.HTTPError as error:

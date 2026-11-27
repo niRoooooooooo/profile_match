@@ -8,7 +8,9 @@ Every protected administrative route must depend on one of:
 
 The caller's access is re-read from Supabase on every request; nothing is
 cached between requests, so a suspension or permission removal takes effect on
-the next call.
+the next call. Since Phase 5.4.3A "active" also requires an unrestricted
+application-wide account status (user_account_status): a suspended or banned
+account is refused with 403 even if its administrative record is active.
 
 HTTP errors
     401  missing, malformed, invalid or expired Bearer token
