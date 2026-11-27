@@ -30,6 +30,9 @@ from app.api.profile_submissions import router as profile_submissions_router
 # Phase 5.2: Administrator authorization routes
 from app.api.admin_access import router as admin_access_router
 
+# Phase 5.5.2: Administrator user directory (read-only)
+from app.api.admin_users import router as admin_users_router
+
 # Phase 5.2.5: Protected Administrator UI and protected static serving
 from app.api.admin_ui import router as admin_ui_router
 from app.core.admin_static import ProtectedStaticFiles
@@ -80,6 +83,9 @@ app.include_router(profile_submissions_router)
 
 # Register the Administrator authorization endpoints.
 app.include_router(admin_access_router)
+
+# Register the Administrator user directory (GET /api/admin/users).
+app.include_router(admin_users_router)
 
 # Register the protected Administrator UI (/admin/...).
 app.include_router(admin_ui_router)

@@ -1013,7 +1013,90 @@ authorized), 404 (not found or not owner), 409 (conflict/stale), 422
 | POST / GET / DELETE | `/institutional/session` | start / read / end institutional UI session | as above |
 | GET/HEAD | `/institutional/{slug}`, `/institutional/{slug}/{file}` | allowlisted Innovation Center files; other slugs 404 | cookie session + membership + page permission |
 
-No user-management, organization or agent APIs exist yet.
+### Administrator user directory (Phase 5.5.2)
+
+| Method | Route | Purpose | Auth |
+|---|---|---|---|
+| GET | `/api/admin/users` | paginated, filterable list of registered users via `public.admin_list_users()` | Bearer; `users.view` (FastAPI) **and** database re-check |
+
+Query parameters (identical bounds to migration 006):
+
+| Parameter | Type / values | Default | RPC argument |
+|---|---|---|---|
+| `search` | string ≤ 100 chars; literal, case-insensitive, name or email; blank → no filter | none | `p_search` |
+| `account_status` | `active` \| `suspended` \| `banned` | none | `p_account_status` |
+| `admin_role` | `administrator` \| `admin_employee` \| `none` | none | `p_admin_role` |
+| `actor` | `^[a-z_]+$`, ≤ 100 chars (existence checked by the database) | none | `p_actor` |
+| `position` | `head` \| `employee` | none | `p_position` |
+| `limit` | 1–100 | **20** | `p_limit` |
+| `offset` | 0–10000 | 0 | `p_offset` |
+
+Response (`UserDirectoryPage`, strict, unknown fields rejected):
+`{"total": int, "limit": int, "offset": int, "users": [{user_id, email|null,
+full_name|null, department|null, registered_at|null, last_sign_in_at|null,
+account_status, admin_role|null, admin_status|null, memberships: [{actor,
+position, status}]}]}`. No restriction reasons, credentials, tokens or auth
+metadata. `Cache-Control: no-store`.
+
+Errors: 400 invalid directory query (SQLSTATE 22023); 401 missing/invalid/
+expired session (also an RPC 401); 403 no `users.view`, restricted account, or
+database refusal (SQLSTATE 42501); 422 invalid query parameters; 503 Supabase
+unreachable, function missing, or malformed/unexpected response (including a
+`limit`/`offset` echo mismatch).
+
+Implementation: `api/admin_users.py` (route, error mapping),
+`services/admin_user_service.py` (RPC call with the publishable key and the
+caller's own token; never the secret key; logs only HTTP status and SQLSTATE),
+`schemas/admin_users.py` (strict models). Cost per request: 3 Supabase calls
+for `require_permissions` + 1 RPC.
+
+**Live verification (Phase 5.5.2, by the owner):** default listing HTTP 200
+(3 registered users); search "gmail" 200 (2 matches); `admin_role=administrator`
+200 (1); `offset=9999` 200 with total 3 and 0 users; `limit=101` 422; ordinary
+Innovator 403; missing authentication 401; successful responses
+`Cache-Control: no-store`.
+
+### Administrator user details (Phase 5.5.3)
+
+| Method | Route | Purpose | Auth |
+|---|---|---|---|
+| GET | `/api/admin/users/{user_id}` | one **target** account via `public.admin_get_user_details(p_user_id)` | Bearer; `users.view` (FastAPI) **and** database re-check |
+
+`{user_id}` identifies the target, never the caller; it must be a UUID (else
+422, no database call) and is forwarded canonicalized as
+`{"p_user_id": "<uuid>"}` with the publishable key and the caller's own token.
+
+Response (`UserDetails`, strict, unknown fields rejected at every level):
+
+| Field | Type | Notes |
+|---|---|---|
+| user_id | uuid | must equal the requested UUID (else 503) |
+| email, full_name, department | string or null | profile fields null when `has_profile` is false (inconsistency → 503) |
+| has_profile | bool | user_profiles row exists |
+| registered_at, last_sign_in_at | datetime or null | |
+| account | `{status, reason, changed_at}` | `reason` only for full Administrators |
+| administrator | null or `{role, status, status_reason, status_changed_at, created_at, updated_at, granted_permissions[]}` | `status_reason` only for full Administrators |
+| memberships | `[{actor, actor_label, position, status, status_reason, created_at, updated_at, granted_permissions[]}]` | `status_reason` only for full Administrators; one per actor |
+| owned_invention_count | int ≥ 0 | count only, no invention content |
+
+`granted_permissions` are **explicit grant rows only** — Administrators and
+institutional Heads hold their permissions implicitly and normally show `[]`.
+Grant keys must exist in the Python registries (administrative; institutional
+and belonging to the membership's actor), else 503.
+
+Privacy safeguards: the database returns reasons only when
+`is_active_administrator(auth.uid())`; the API additionally fails closed (503)
+if any reason is non-null for a caller who is not a full active Administrator.
+No credentials, tokens, password hashes, raw auth metadata or invention
+content can pass validation. Nothing about users or tokens is logged.
+
+Errors: 400 (22023), 401 (missing/invalid/expired; RPC 401), 403 (no
+`users.view`, restricted caller, or 42501), **404 (P0002, target not found)**,
+422 (malformed UUID), 503 (unreachable, function missing, malformed,
+mismatched or over-disclosing response). Endpoint-specific errors and
+successes carry `Cache-Control: no-store`.
+
+No mutation, organization or agent APIs exist yet.
 
 ---
 
@@ -1209,7 +1292,9 @@ Planned · Deferred.
 | 5.4.3B.2 | FastAPI account restrictions on 8 Innovator APIs | `core/account_status.py`, `main.py`, `profiles.py`, `profile_submissions.py` | 26/26 simulated | Implemented with simulated verification |
 | 5.4.3B.3 | Shared parser, AI/submission re-checks, restricted dashboard | services, `dashboard.js` | 9/9 + 19/19 simulated | Implemented with simulated verification |
 | 5.4.4 | No-flash dashboard, report-page gate, dev page blocked, 16 permanent authorization tests | `index.html`, `invention_report.html`, `main.py`, tests | 277/277; 20/20 browser | Implemented with simulated verification |
-| 5.5.1 | User Management database foundation: design, migration recovery (003–005), live inspection, drafts 006 (directory) and 007 (invariant + audit) | `read.md`, `supabase/migrations/003`–`007` | live inspection by owner; drafts not executed | In progress — drafts awaiting owner review (not applied) |
+| 5.5.1 | User Management database foundation: design, migration recovery (003–005), live inspection, 006 (directory) and 007 (invariant + audit) | `read.md`, `supabase/migrations/003`–`007` | owner installed 006 live ("PASS: all 3 directory functions installed"); 007 not applied | 006: Completed (deployed); 007: Planned (draft, not applied) |
+| 5.5.2 | User listing and search API `GET /api/admin/users` | `api/admin_users.py`, `services/admin_user_service.py`, `schemas/admin_users.py`, `main.py`, tests | 284/284 simulated; **live verified by owner** (listing, search, filter, empty page, 422, 403, 401, no-store) | Completed and verified |
+| 5.5.3 | User details API `GET /api/admin/users/{user_id}` | same three files, tests | 290/290 simulated (6 new details tests) | Implemented with simulated verification (live verification pending) |
 
 Earlier historical details beyond the commit messages (exact Phase 1–4
 sub-steps) are not fully recoverable from the repository.
@@ -1248,17 +1333,18 @@ onboarding.
 
 ### History
 
-259 → 260 (Phase 5.2.x) → 261 (Phase 5.4.2) → **277/277** (Phase 5.4.4, latest
-baseline).
+259 → 260 (Phase 5.2.x) → 261 (Phase 5.4.2) → 277/277 (Phase 5.4.4) →
+284/284 (Phase 5.5.2; +7 user-directory tests) → **290/290** (Phase 5.5.3,
+latest baseline; +6 user-details tests).
 
-### Test inventory (277 tests)
+### Test inventory (290 tests)
 
 | File | Tests | Responsibility |
 |---|---|---|
 | test_profiling_agent.py | 55 | agent pipeline, evidence validation, draft safety, API error mapping |
 | test_report_renderer.py | 36 | report rendering |
 | test_gemini_client.py | 31 | Gemini client, quotas, retries (mocked) |
-| test_innovation_center.py | 31 | IC pages, switcher, static protection, dev page, **10 authorization service tests** |
+| test_innovation_center.py | 44 | IC pages, switcher, static protection, dev page, **10 authorization service tests**, **7 user-directory API tests** (5.5.2), **6 user-details API tests** (5.5.3) |
 | test_option_b.py | 28 | flat extraction (Option B) |
 | test_demo_mode.py | 27 | demo-mode authorization, consent flow |
 | test_large_fixture.py | 17 | large fictional fixture |
@@ -1346,7 +1432,7 @@ uvicorn app.main:app --reload --port 8000
 | 003_admin_access.sql | `admin_permissions` (24), `admin_accounts`, `admin_permission_grants`, 4 guard/cleanup triggers, RLS + full revoke (incl. service_role), `admin_get_my_access()` | **yes (recovered original)** | applied (Phase 5.2.2) | live Administrator 200 / ordinary 403 / no token 401 |
 | 004_institutional_access.sql | actors (4), permissions (28), `user_account_status`, memberships, grants, `audit_logs`, `is_active_administrator`, guards, audit triggers, append-only triggers, `institutional_get_my_access()`; **no mutation RPCs** | **yes (recovered original)** | applied (Phase 5.3.2) | live `/api/access/me` passed |
 | 005_global_account_security.sql | preflight (policy inventory), `is_account_active()`, six restrictive policies, revoke TRUNCATE/TRIGGER/REFERENCES, postcondition checks | **yes (recovered original)** | applied (Phase 5.4.3B.1) | six policies confirmed by owner |
-| 006_user_directory.sql | read-only directory: `admin_caller_has_permission`, `admin_list_users`, `admin_get_user_details` | yes (draft) | **not applied** | written against verified live state; needs owner review + staging test |
+| 006_user_directory.sql | read-only directory: `admin_caller_has_permission`, `admin_list_users`, `admin_get_user_details` | yes | **applied (Phase 5.5.1/5.5.2, owner)** — "PASS: all 3 directory functions installed" | installation verified by owner; API behaviour verified only in simulation |
 | 007_administrator_invariant_and_audit.sql | serialized last-Administrator invariant, revised `admin_accounts_guard` / `user_account_status_guard`, audit triggers on admin tables | yes (draft) | **not applied** | needs owner review + PostgreSQL concurrency tests |
 
 The earlier combined draft `006_user_management_foundation.sql` was never
@@ -1368,7 +1454,10 @@ policies, bucket configuration).
 
 - Remote: `https://github.com/niRoooooooooo/profile_match.git`
 - Branch: `main`
-- Latest commit: `e2b5eb7` "phrease 5.4 is done" (contains Phases 5.4.3A–5.4.4)
+- Latest commit: `c52316c` "system update" (documentation, recovered
+  migrations 003–005, migrations 006–007), pushed; `main` even with
+  `origin/main` at the start of Phase 5.5.2
+- `e2b5eb7` "phrease 5.4 is done" (Phases 5.4.3A–5.4.4)
 - Previous verified checkpoint: `f3f39be` "feat: implement institutional RBAC
   and secure actor interfaces through phase 5.4.2"
 - Earlier: `40b841f` phrase 4 done · `47e80b8` inovator done · `43ce537` delete
@@ -1912,12 +2001,12 @@ verified: the exact text of the delete policies, `handle_new_innovator()` and
 
 | Item | State |
 |---|---|
-| Latest implementation | Phase 5.4.4 (security cleanup) — committed in `e2b5eb7` |
-| Current phase | 5.5.1 — design and live inspection completed; corrected drafts **006_user_directory** and **007_administrator_invariant_and_audit** prepared; awaiting owner review |
-| Git | `main` at `e2b5eb7`, even with `origin/main`; uncommitted: `read.md`, recovered `003`–`005`, draft `006_user_directory.sql`, draft `007_…`, `phase_5_5_1_review.zip` (contains the superseded combined draft) |
-| Test baseline | 277/277 (simulated); suite unchanged in 5.5.1 |
-| Database (verified live) | 003–005 applied; 14 tables, 18 functions, 18 enabled triggers; 1 globally active Administrator; 006/007 **not applied**, review flags not set |
-| Outstanding verification | staging/PostgreSQL syntax + integration tests for 006; concurrency tests for 007 (§28.11); live-verify Phase 5.4 browser behaviour |
-| Next step | owner reviews and applies **006** (independent of 007) → **Phase 5.5.2 — User Listing and Search API**. 007 must be applied before any mutation phase (5.5.4+) |
-| Files for the next step | `supabase/migrations/006_user_directory.sql`, `backend/app/core/admin_access.py`, a new `backend/app/api/admin_users.py` (proposed), `backend/app/main.py`, `tests/test_innovation_center.py`; frontend `user-management.html` + `js/users.js` in 5.5.7 |
-| Needs owner approval | applying 006; applying 007 (guard replacement); pinning `requirements.txt`; any mutation phase |
+| Latest implementation | **Phase 5.5.3** — `GET /api/admin/users/{user_id}` (simulated verification). Phase 5.5.2 live-verified |
+| Current phase | 5.5.3 completed in code; awaiting owner live verification and approval |
+| Git | `main` at `c52316c`, even with `origin/main`; uncommitted 5.5.2 + 5.5.3 changes: new `api/admin_users.py`, `services/admin_user_service.py`, `schemas/admin_users.py`; modified `main.py`, `tests/test_innovation_center.py`, `read.md` |
+| Test baseline | **290/290** (simulated) |
+| Database (verified live) | 003–006 applied (006: 3 directory functions installed); 007 **not applied** |
+| Outstanding verification | live test of `GET /api/admin/users/{user_id}` with the Administrator account and an ordinary account (§13); staging concurrency tests for 007 (§28.11); live-verify Phase 5.4 browser behaviour |
+| Next step | after approval: apply **007** (after staging tests), then **Phase 5.5.4 — Institutional employee assignment** (first mutation phase). Frontend integration is Phase 5.5.7 |
+| Files for the next step | `supabase/migrations/007_administrator_invariant_and_audit.sql`, a new mutation-RPC migration (to be designed), `backend/app/api/admin_users.py`, `services/admin_user_service.py`, tests |
+| Needs owner approval | applying 007 (guard replacement); Phase 5.5.4; pinning `requirements.txt` |

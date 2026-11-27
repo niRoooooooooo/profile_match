@@ -247,9 +247,11 @@ class AuthorizationServiceTests(unittest.TestCase):
         staff = {"role": "admin_employee", "status": "active", "permissions": ["users.view"]}
         member = lambda position, perms=(): [{"actor": "innovation_center", "position": position,
                                               "status": "active", "permissions": list(perms)}]
+        staff_noview = {"role": "admin_employee", "status": "active", "permissions": ["audit.view"]}
         self.users = {
             "admin": {"admin": admin, "memberships": []},
             "staff": {"admin": staff, "memberships": []},
+            "staff_noview": {"admin": staff_noview, "memberships": []},
             "ordinary": {"admin": None, "memberships": []},
             "head": {"admin": None, "memberships": member("head")},
             "employee": {"admin": None, "memberships": member("employee", [
@@ -275,7 +277,111 @@ class AuthorizationServiceTests(unittest.TestCase):
                     return record(row)
                 return httpx.Response(200, json={"user_id": row["uid"], "account_status": None,
                                                  "memberships": row["memberships"]})
+            if path.endswith("/rpc/admin_list_users"):
+                return self.directory_rpc(request, row)
+            if path.endswith("/rpc/admin_get_user_details"):
+                return self.details_rpc(request, row)
             return httpx.Response(404, json={})
+
+        # Phase 5.5.2: simulated public.admin_list_users() (migration 006).
+        # Fictional directory rows only; the emulator enforces the same rule as
+        # the database (users.view, unrestricted) and records every call.
+        self.directory_rows = [
+            {"user_id": str(uuid.uuid4()), "email": "alpha.innovator@example.test",
+             "full_name": "Alpha Innovator", "department": "Engineering",
+             "registered_at": "2026-11-20T10:00:00+00:00", "last_sign_in_at": "2026-11-27T09:00:00+00:00",
+             "account_status": "active", "admin_role": None, "admin_status": None,
+             "memberships": [{"actor": "innovation_center", "position": "head", "status": "active"}]},
+            {"user_id": str(uuid.uuid4()), "email": None, "full_name": None, "department": None,
+             "registered_at": None, "last_sign_in_at": None, "account_status": "suspended",
+             "admin_role": "admin_employee", "admin_status": "active", "memberships": []},
+        ]
+        self.directory_calls = []
+        self.directory_response = None      # callable(request) -> httpx.Response to override
+
+        def directory_rpc(request, row):
+            body = json.loads(request.content)
+            self.directory_calls.append({"args": body, "apikey": request.headers.get("apikey"),
+                                         "authorization": request.headers.get("authorization")})
+            if self.directory_response is not None:
+                return self.directory_response(request)
+            if not row:
+                return httpx.Response(401, json={})
+            grants = (row["admin"] or {}).get("permissions", [])
+            allowed = (row["admin"] is not None and row["admin"]["status"] == "active"
+                       and not row.get("restricted")
+                       and (row["admin"]["role"] == "administrator" or "users.view" in grants))
+            if not allowed:
+                return httpx.Response(403, json={"code": "42501", "message": "Not authorized"})
+            matches = [u for u in self.directory_rows
+                       if not body["p_search"]
+                       or body["p_search"].lower() in (u["email"] or "").lower()
+                       or body["p_search"].lower() in (u["full_name"] or "").lower()]
+            if body["p_account_status"]:
+                matches = [u for u in matches if u["account_status"] == body["p_account_status"]]
+            page = matches[body["p_offset"]:body["p_offset"] + body["p_limit"]]
+            return httpx.Response(200, json={"total": len(matches), "limit": body["p_limit"],
+                                             "offset": body["p_offset"], "users": page})
+        self.directory_rpc = directory_rpc
+
+        # Phase 5.5.3: simulated public.admin_get_user_details(). Fictional
+        # targets: one with a profile, an Admin Employee account and two
+        # memberships with explicit grants; one without a profile row.
+        self.target_full = str(uuid.uuid4())
+        self.target_bare = str(uuid.uuid4())
+        self.detail_rows = {
+            self.target_full: {
+                "user_id": self.target_full, "email": "beta.staff@example.test", "full_name": "Beta Staff",
+                "department": "Research Office", "has_profile": True,
+                "registered_at": "2026-11-21T08:00:00+00:00", "last_sign_in_at": None,
+                "account": {"status": "suspended", "reason": "Fictional restriction reason",
+                            "changed_at": "2026-11-26T12:00:00+00:00"},
+                "administrator": {"role": "admin_employee", "status": "active",
+                                  "status_reason": "Fictional admin note",
+                                  "status_changed_at": None, "created_at": "2026-11-22T08:00:00+00:00",
+                                  "updated_at": "2026-11-22T08:00:00+00:00",
+                                  "granted_permissions": ["audit.view", "users.view"]},
+                "memberships": [
+                    {"actor": "innovation_center", "actor_label": "Innovation Center", "position": "employee",
+                     "status": "active", "status_reason": None, "created_at": "2026-11-23T08:00:00+00:00",
+                     "updated_at": "2026-11-23T08:00:00+00:00",
+                     "granted_permissions": ["innovation_center.inventions.view"]},
+                    {"actor": "management", "actor_label": "Management", "position": "head",
+                     "status": "suspended", "status_reason": "Fictional membership note",
+                     "created_at": "2026-11-24T08:00:00+00:00", "updated_at": "2026-11-25T08:00:00+00:00",
+                     "granted_permissions": []}],
+                "owned_invention_count": 2},
+            self.target_bare: {
+                "user_id": self.target_bare, "email": None, "full_name": None, "department": None,
+                "has_profile": False, "registered_at": None, "last_sign_in_at": None,
+                "account": {"status": "active", "reason": None, "changed_at": None},
+                "administrator": None, "memberships": [], "owned_invention_count": 0},
+        }
+        self.details_response = None        # callable(request) -> httpx.Response to override
+
+        def details_rpc(request, row):
+            body = json.loads(request.content)
+            self.directory_calls.append({"args": body, "apikey": request.headers.get("apikey"),
+                                         "authorization": request.headers.get("authorization")})
+            if self.details_response is not None:
+                return self.details_response(request)
+            grants = (row["admin"] or {}).get("permissions", []) if row else []
+            allowed = (row and row["admin"] is not None and row["admin"]["status"] == "active"
+                       and (row["admin"]["role"] == "administrator" or "users.view" in grants))
+            if not allowed:
+                return httpx.Response(403, json={"code": "42501"})
+            target = self.detail_rows.get(body["p_user_id"])
+            if target is None:
+                return httpx.Response(400, json={"code": "P0002", "message": "User not found"})
+            result = json.loads(json.dumps(target))
+            if row["admin"]["role"] != "administrator":          # reasons: full Administrators only
+                result["account"]["reason"] = None
+                if result["administrator"]:
+                    result["administrator"]["status_reason"] = None
+                for membership in result["memberships"]:
+                    membership["status_reason"] = None
+            return httpx.Response(200, json=result)
+        self.details_rpc = details_rpc
 
         transport = httpx.MockTransport(handler)
         self.admin_service = AdminAccessService("https://example.supabase.co", "sb_publishable_test",
@@ -287,6 +393,12 @@ class AuthorizationServiceTests(unittest.TestCase):
         overrides[get_institutional_access_service] = lambda: institutional
         self.addCleanup(overrides.pop, get_admin_access_service, None)
         self.addCleanup(overrides.pop, get_institutional_access_service, None)
+        from app.api.admin_users import get_admin_user_service
+        from app.services.admin_user_service import AdminUserService
+        user_service = AdminUserService("https://example.supabase.co", "sb_publishable_test",
+                                        transport=transport)
+        overrides[get_admin_user_service] = lambda: user_service
+        self.addCleanup(overrides.pop, get_admin_user_service, None)
         self.app, self.TestClient, self.httpx = app, TestClient, httpx
 
         def token(name):
@@ -411,6 +523,217 @@ class AuthorizationServiceTests(unittest.TestCase):
         client = self.client()
         self.assertEqual(client.get("/api/admin/access/me", headers=self.bearer("nobody")).status_code, 401)
         self.assertEqual(client.get("/api/access/me").status_code, 401)
+
+    # ------------------------------------------- Phase 5.5.2: GET /api/admin/users
+
+    def directory(self, name="admin", params=None, headers=None):
+        hdrs = self.bearer(name) if headers is None else headers
+        return self.client().get("/api/admin/users", params=params or {}, headers=hdrs)
+
+    def test_directory_administrator_and_authorized_admin_employee(self):
+        for name in ("admin", "staff"):
+            response = self.directory(name)
+            self.assertEqual(response.status_code, 200, (name, response.text))
+            self.assertEqual(response.headers["cache-control"], "no-store")
+            body = response.json()
+            self.assertEqual((body["total"], body["limit"], body["offset"]), (2, 20, 0))
+            self.assertEqual(set(body["users"][0]), {
+                "user_id", "email", "full_name", "department", "registered_at", "last_sign_in_at",
+                "account_status", "admin_role", "admin_status", "memberships"})
+            self.assertEqual(body["users"][0]["memberships"],
+                             [{"actor": "innovation_center", "position": "head", "status": "active"}])
+
+    def test_directory_denies_everyone_without_users_view(self):
+        for name in ("staff_noview", "ordinary", "head", "employee"):
+            self.assertEqual(self.directory(name).status_code, 403, name)
+        self.assertEqual(self.directory(headers={}).status_code, 401)
+        self.assertEqual(self.directory("nobody").status_code, 401)
+        self.assertEqual(self.directory_calls, [], "denied before any directory request")
+
+    def test_directory_denies_restricted_accounts(self):
+        for status_value in ("suspended", "banned", "archived"):
+            self.set_record("admin", lambda row, s=status_value: {
+                "user_id": row["uid"], "account_status": s, "memberships": []})
+            self.assertEqual(self.directory("admin").status_code, 403, status_value)
+        self.assertEqual(self.directory_calls, [])
+
+    def test_directory_forwards_exact_rpc_contract_with_caller_token(self):
+        params = {"search": "  Alpha ", "account_status": "active", "admin_role": "none",
+                  "actor": "innovation_center", "position": "head", "limit": 5, "offset": 0}
+        response = self.directory("admin", params)
+        self.assertEqual(response.status_code, 200, response.text)
+        call = self.directory_calls[-1]
+        self.assertEqual(call["args"], {"p_search": "Alpha", "p_account_status": "active",
+                                        "p_admin_role": "none", "p_actor": "innovation_center",
+                                        "p_position": "head", "p_limit": 5, "p_offset": 0})
+        self.assertEqual(call["apikey"], "sb_publishable_test")
+        self.assertEqual(call["authorization"], "Bearer " + self.token("admin"))
+        self.assertFalse(any((c["apikey"] or "").startswith("sb_secret_") for c in self.directory_calls))
+        self.assertEqual([u["full_name"] for u in response.json()["users"]], ["Alpha Innovator"])
+        # Defaults and blank search.
+        self.directory("admin", {"search": "   "})
+        self.assertEqual(self.directory_calls[-1]["args"], {
+            "p_search": None, "p_account_status": None, "p_admin_role": None, "p_actor": None,
+            "p_position": None, "p_limit": 20, "p_offset": 0})
+
+    def test_directory_parameter_validation_matches_migration_006(self):
+        for params in ({"limit": 0}, {"limit": 101}, {"offset": -1}, {"offset": 10001},
+                       {"search": "x" * 101}, {"account_status": "deleted"}, {"admin_role": "owner"},
+                       {"position": "manager"}, {"actor": "Innovation-Center"}, {"limit": "many"}):
+            self.assertEqual(self.directory("admin", params).status_code, 422, params)
+        self.assertEqual(self.directory_calls, [])
+        self.assertEqual(self.directory("admin", {"limit": 100, "offset": 10000}).status_code, 200)
+
+    def test_directory_empty_page_and_nullable_fields(self):
+        body = self.directory("admin", {"offset": 50}).json()
+        self.assertEqual((body["total"], body["users"]), (2, []))
+        body = self.directory("admin", {"search": "no-such-person"}).json()
+        self.assertEqual((body["total"], body["users"]), (0, []))
+        nullable = self.directory("admin", {"account_status": "suspended"}).json()["users"][0]
+        for field in ("email", "full_name", "department", "registered_at", "last_sign_in_at"):
+            self.assertIsNone(nullable[field], field)
+
+    def test_directory_database_errors_and_malformed_responses_fail_closed(self):
+        httpx = self.httpx
+        good = {"user_id": self.directory_rows[0]["user_id"], "email": None, "full_name": None,
+                "department": None, "registered_at": None, "last_sign_in_at": None,
+                "account_status": "active", "admin_role": None, "admin_status": None, "memberships": []}
+        page = lambda users, **kw: {"total": len(users), "limit": 20, "offset": 0, "users": users, **kw}
+
+        def unreachable(request):
+            raise httpx.ConnectError("down", request=request)
+        cases = (
+            (lambda r: httpx.Response(403, json={"code": "42501"}), 403),       # database refuses caller
+            (lambda r: httpx.Response(400, json={"code": "22023"}), 400),       # invalid argument
+            (lambda r: httpx.Response(401, json={}), 401),
+            (lambda r: httpx.Response(404, json={"code": "PGRST202"}), 503),    # function missing
+            (lambda r: httpx.Response(500, json={}), 503),
+            (unreachable, 503),
+            (lambda r: httpx.Response(200, content=b"null", headers={"Content-Type": "application/json"}), 503),
+            (lambda r: httpx.Response(200, content=b"<html>", headers={"Content-Type": "text/html"}), 503),
+            (lambda r: httpx.Response(200, json=[good]), 503),                                   # not an object
+            (lambda r: httpx.Response(200, json={"users": [good]}), 503),                        # fields missing
+            (lambda r: httpx.Response(200, json=page([{**good, "reason": "x"}])), 503),          # unexpected field
+            (lambda r: httpx.Response(200, json=page([{**good, "account_status": "deleted"}])), 503),
+            (lambda r: httpx.Response(200, json=page([{**good, "user_id": "not-a-uuid"}])), 503),
+            (lambda r: httpx.Response(200, json=page([good], limit=99)), 503),                   # window mismatch
+            (lambda r: httpx.Response(200, json=page([good], total=-1)), 503),
+        )
+        for respond, expected in cases:
+            self.directory_response = respond
+            response = self.directory("admin")
+            self.assertEqual(response.status_code, expected, response.text)
+            self.assertEqual(response.headers.get("cache-control"), "no-store")
+            self.assertNotIn("example.test", response.text)
+
+    # --------------------------------- Phase 5.5.3: GET /api/admin/users/{user_id}
+
+    def details(self, target, name="admin", headers=None):
+        hdrs = self.bearer(name) if headers is None else headers
+        return self.client().get(f"/api/admin/users/{target}", headers=hdrs)
+
+    def test_details_administrator_sees_full_record_with_reasons(self):
+        response = self.details(self.target_full)
+        self.assertEqual(response.status_code, 200, response.text)
+        self.assertEqual(response.headers["cache-control"], "no-store")
+        body = response.json()
+        self.assertEqual(body["user_id"], self.target_full)
+        self.assertEqual(body["account"], {"status": "suspended", "reason": "Fictional restriction reason",
+                                           "changed_at": "2026-11-26T12:00:00Z"})
+        self.assertEqual(body["administrator"]["status_reason"], "Fictional admin note")
+        self.assertEqual(body["administrator"]["granted_permissions"], ["audit.view", "users.view"])
+        self.assertEqual([(m["actor"], m["position"], m["granted_permissions"]) for m in body["memberships"]],
+                         [("innovation_center", "employee", ["innovation_center.inventions.view"]),
+                          ("management", "head", [])])          # Head: no explicit grants
+        self.assertEqual(body["memberships"][1]["status_reason"], "Fictional membership note")
+        self.assertEqual(body["owned_invention_count"], 2)
+        self.assertIsNone(body["last_sign_in_at"])
+
+    def test_details_without_profile_and_nullable_fields(self):
+        body = self.details(self.target_bare).json()
+        self.assertEqual((body["has_profile"], body["full_name"], body["email"], body["registered_at"],
+                          body["administrator"], body["memberships"]), (False, None, None, None, None, []))
+        self.assertEqual(body["account"], {"status": "active", "reason": None, "changed_at": None})
+
+    def test_details_admin_employee_never_sees_restriction_reasons(self):
+        body = self.details(self.target_full, "staff").json()
+        self.assertIsNone(body["account"]["reason"])
+        self.assertIsNone(body["administrator"]["status_reason"])
+        self.assertTrue(all(m["status_reason"] is None for m in body["memberships"]))
+        # If the database unexpectedly returned reasons to an Admin Employee: fail closed.
+        httpx = self.httpx
+        self.details_response = lambda r: httpx.Response(200, json=self.detail_rows[self.target_full])
+        response = self.details(self.target_full, "staff")
+        self.assertEqual(response.status_code, 503)
+        self.assertNotIn("Fictional", response.text)
+
+    def test_details_denied_callers_and_authentication(self):
+        for name in ("staff_noview", "ordinary", "head", "employee"):
+            self.assertEqual(self.details(self.target_full, name).status_code, 403, name)
+        for status_value in ("suspended", "banned"):
+            self.set_record("staff", lambda row, s=status_value: {
+                "user_id": row["uid"], "account_status": s, "memberships": []})
+            self.assertEqual(self.details(self.target_full, "staff").status_code, 403, status_value)
+        self.assertEqual(self.details(self.target_full, headers={}).status_code, 401)
+        self.assertEqual(self.details(self.target_full, "nobody").status_code, 401)
+        self.assertEqual(self.directory_calls, [], "denied before any database request")
+
+    def test_details_not_found_invalid_uuid_and_rpc_contract(self):
+        import uuid
+        response = self.details(str(uuid.uuid4()))
+        self.assertEqual((response.status_code, response.headers["cache-control"]), (404, "no-store"))
+        calls_before = len(self.directory_calls)
+        for bad in ("not-a-uuid", "123", self.target_full + "x"):
+            self.assertEqual(self.details(bad).status_code, 422, bad)
+        self.assertEqual(len(self.directory_calls), calls_before, "no database call for malformed UUIDs")
+        self.details(self.target_full.upper())                     # canonicalized before forwarding
+        call = self.directory_calls[-1]
+        self.assertEqual(call["args"], {"p_user_id": self.target_full})
+        self.assertEqual(call["apikey"], "sb_publishable_test")
+        self.assertEqual(call["authorization"], "Bearer " + self.token("admin"))
+        self.assertFalse(any((c["apikey"] or "").startswith("sb_secret_") for c in self.directory_calls))
+
+    def test_details_malformed_responses_and_errors_fail_closed(self):
+        import copy
+        httpx = self.httpx
+        base = self.detail_rows[self.target_full]
+
+        def variant(change):
+            data = copy.deepcopy(base)
+            change(data)
+            return lambda r: httpx.Response(200, json=data)
+
+        def unreachable(request):
+            raise httpx.ConnectError("down", request=request)
+        cases = (
+            (variant(lambda d: d.update(user_id=self.target_bare)), 503),                 # another user
+            (variant(lambda d: d.update(encrypted_password="x")), 503),                   # sensitive extra field
+            (variant(lambda d: d.update(raw_user_meta_data={})), 503),
+            (variant(lambda d: d["account"].update(token="x")), 503),                     # nested extra field
+            (variant(lambda d: d["administrator"].update(granted_permissions=["root.all"])), 503),
+            (variant(lambda d: d["memberships"][0].update(
+                granted_permissions=["industry_liaison.matches.view"])), 503),            # cross-actor grant
+            (variant(lambda d: d.update(memberships=[d["memberships"][0]] * 2)), 503),    # duplicate actor
+            (variant(lambda d: d.update(has_profile=False)), 503),                        # inconsistent profile
+            (variant(lambda d: d.update(owned_invention_count=-1)), 503),
+            (variant(lambda d: d["account"].update(status="deleted")), 503),
+            (variant(lambda d: d.pop("account")), 503),
+            (lambda r: httpx.Response(200, content=b"null", headers={"Content-Type": "application/json"}), 503),
+            (lambda r: httpx.Response(200, json=[base]), 503),
+            (lambda r: httpx.Response(500, json={}), 503),
+            (lambda r: httpx.Response(404, json={"code": "PGRST202"}), 503),
+            (unreachable, 503),
+            (lambda r: httpx.Response(403, json={"code": "42501"}), 403),                 # database refuses caller
+            (lambda r: httpx.Response(400, json={"code": "22023"}), 400),
+            (lambda r: httpx.Response(401, json={}), 401),
+        )
+        for respond, expected in cases:
+            self.details_response = respond
+            response = self.details(self.target_full)
+            self.assertEqual(response.status_code, expected, response.text)
+            self.assertEqual(response.headers.get("cache-control"), "no-store")
+            self.assertNotIn("Fictional", response.text)
+            self.assertNotIn("example.test", response.text)
 
 
 # --------------------------------------------------------------------------
