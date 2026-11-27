@@ -1,0 +1,126 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="robots" content="noindex, nofollow">
+  <title>Data Sources · Administrator | Profile Match</title>
+  <link rel="stylesheet" href="/assets/css/style.css">
+  <link rel="stylesheet" href="/assets/css/roles.css">
+  <link rel="stylesheet" href="css/admin.css">
+  <script src="/assets/js/role-switcher.js" defer></script>
+  <script src="/assets/js/session-header.js" defer></script>
+  <script src="js/admin.js" defer></script>
+  <script src="js/navigation.js" defer></script>
+  <script src="js/sources.js" defer></script>
+</head>
+<body data-role="administrator" data-auth="pending" data-section="sources">
+<a class="skip-link" href="#main">Skip to main content</a>
+<header class="top role-top">
+  <div class="brand">Partner Matching Agent<small id="adminRoleLabel">Administrator</small></div>
+  <div id="roleSwitcher"></div>
+  <div class="account-area">
+    <span id="accountName" class="account-name">Checking account…</span>
+    <button class="btn" id="logoutButton" type="button">Sign out</button>
+  </div>
+</header>
+<div class="dev-banner preview-banner" role="note">
+  <strong>Data not connected.</strong> No data source is registered or connected, and no
+  external website or API is contacted from this page.
+</div>
+<div class="app">
+  <aside class="sidebar" id="adminSidebar">
+    <noscript><p class="small">Navigation needs JavaScript. <a href="overview.html">Overview</a></p></noscript>
+  </aside>
+  <main id="main" class="content adm-content" tabindex="-1">
+    <div class="page-head">
+      <div>
+        <h1>Data sources</h1>
+        <p class="lead">Registry of public sources the Data Collection Agent may use, with priority,
+          collection method, refresh frequency and access restrictions.</p>
+      </div>
+      <span class="preview-tag">Sources not connected</span>
+    </div>
+
+    <section aria-labelledby="cats-h">
+      <h2 id="cats-h" class="section-title">Source categories</h2>
+      <ul class="kpi-grid" id="sourceCategories"></ul>
+    </section>
+
+    <section aria-labelledby="registry-h">
+      <h2 id="registry-h" class="section-title">Source registry</h2>
+      <div class="toolbar">
+        <button type="button" class="btn primary small" data-open-dialog="dlg-add-source" aria-haspopup="dialog" data-requires="sources.manage">Add source…</button>
+        <button data-requires="sources.manage" data-nc>Edit source</button>
+        <button data-requires="sources.manage" data-nc>Enable</button>
+        <button data-requires="sources.manage" data-nc>Disable</button>
+        <button data-requires="sources.manage" data-nc class="danger">Remove</button>
+      </div>
+      <form class="filters" data-filters="sourceCount" role="search" aria-label="Filter sources">
+        <label class="filter grow" for="f-search">Search sources
+          <input id="f-search" type="search" autocomplete="off" placeholder="Name or URL"></label>
+        <label class="filter" for="f-category">Category
+          <select id="f-category" data-source-categories><option value="">All categories</option></select></label>
+        <label class="filter" for="f-status">Availability
+          <select id="f-status">
+            <option value="">All</option><option>Available</option><option>Unavailable</option>
+            <option>Disabled</option><option>Not checked</option>
+          </select></label>
+        <button class="btn small" type="reset">Clear filters</button>
+      </form>
+      <p id="sourceCount" class="result-count" role="status"></p>
+      <div class="table-host">
+        <table class="data-table">
+          <caption class="sr-only">Registered data sources</caption>
+          <thead><tr><th scope="col">Source name</th><th scope="col">URL</th><th scope="col">Category</th>
+                     <th scope="col">Priority</th><th scope="col">Collection method</th>
+                     <th scope="col">Refresh frequency</th><th scope="col">Access restrictions</th>
+                     <th scope="col">Last retrieval</th><th scope="col">Availability</th>
+                     <th scope="col">Actions</th></tr></thead>
+          <tbody id="sourceRows"></tbody>
+        </table>
+      </div>
+    </section>
+
+    <dialog id="dlg-add-source" class="adm-dialog" aria-labelledby="dlg-add-source-h" data-requires="sources.manage">
+      <form data-preview-form="Source details checked in this browser only. Registering sources is not connected — nothing was stored, and the URL was not contacted.">
+        <div class="dialog-body">
+          <h2 id="dlg-add-source-h">Add data source</h2>
+          <div class="form-grid-2">
+            <label class="form-field span-2" for="s-name">Source name<input id="s-name" type="text" required maxlength="200"></label>
+            <label class="form-field span-2" for="s-url">URL
+              <input id="s-url" type="url" placeholder="https://" inputmode="url">
+              <span class="field-hint">Leave empty for employee-uploaded documents.</span></label>
+            <label class="form-field" for="s-category">Category
+              <select id="s-category" required data-source-categories><option value="">Select a category</option></select></label>
+            <label class="form-field" for="s-priority">Priority
+              <select id="s-priority" required>
+                <option value="">Select priority</option><option>High</option><option>Medium</option><option>Low</option>
+              </select></label>
+            <label class="form-field" for="s-method">Collection method
+              <select id="s-method" required>
+                <option value="">Select a method</option><option>Web page collection</option>
+                <option>Public API</option><option>Downloadable dataset</option>
+                <option>RSS / news feed</option><option>Manual document upload</option>
+              </select></label>
+            <label class="form-field" for="s-refresh">Refresh frequency
+              <select id="s-refresh" required>
+                <option value="">Select frequency</option><option>Weekly</option><option>Every 2 weeks</option>
+                <option>Monthly</option><option>Quarterly</option><option>On demand only</option>
+              </select></label>
+            <label class="form-field span-2" for="s-restrictions">Access restrictions
+              <textarea id="s-restrictions" rows="2" placeholder="Terms of use, robots.txt rules, rate limits, licence conditions"></textarea></label>
+          </div>
+          <p class="form-status" role="status"></p>
+        </div>
+        <div class="dialog-actions">
+          <button type="button" class="btn small" data-close-dialog>Cancel</button>
+          <button type="submit" class="btn small">Check entries</button>
+          <button data-nc>Add source</button>
+        </div>
+      </form>
+    </dialog>
+  </main>
+</div>
+</body>
+</html>

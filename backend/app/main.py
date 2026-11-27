@@ -24,6 +24,19 @@ from app.api.profiles import (
 )
 from app.api.profile_submissions import router as profile_submissions_router
 
+# Phase 5.2: Administrator authorization routes
+from app.api.admin_access import router as admin_access_router
+
+# Phase 5.2.5: Protected Administrator UI and protected static serving
+from app.api.admin_ui import router as admin_ui_router
+from app.core.admin_static import ProtectedStaticFiles
+
+# Phase 5.3.3: Unified institutional authorization routes
+from app.api.institutional_access import router as institutional_access_router
+
+# Phase 5.4.1: Protected institutional UI (/institutional/...)
+from app.api.institutional_ui import router as institutional_ui_router
+
 
 app = FastAPI(
     title="AI Industry Partner Matching Agent",
@@ -33,15 +46,38 @@ app = FastAPI(
 ROOT_DIR = Path(__file__).resolve().parents[2]
 FRONTEND_DIR = ROOT_DIR / "frontend"
 
+ADMIN_UI_DIR = FRONTEND_DIR / "roles" / "administrator"
+
+# Every institutional interface folder (Administrator, Innovation Center,
+# Industry Liaison, Management, Industry Partner and any future one).
+INSTITUTIONAL_UI_DIR = FRONTEND_DIR / "roles"
+
+# Public frontend files. Institutional folders are refused here and served
+# only through the authorized /admin and /institutional routes.
 app.mount(
     "/assets",
-    StaticFiles(directory=FRONTEND_DIR),
+    ProtectedStaticFiles(
+        directory=FRONTEND_DIR,
+        protected_directories=[ADMIN_UI_DIR, INSTITUTIONAL_UI_DIR]
+    ),
     name="assets"
 )
 
 # Register the new invention profiling endpoints.
 app.include_router(profiles_router)
 app.include_router(profile_submissions_router)
+
+# Register the Administrator authorization endpoints.
+app.include_router(admin_access_router)
+
+# Register the protected Administrator UI (/admin/...).
+app.include_router(admin_ui_router)
+
+# Register the unified institutional access endpoint (/api/access/me).
+app.include_router(institutional_access_router)
+
+# Register the protected institutional UI (/institutional/...).
+app.include_router(institutional_ui_router)
 
 
 @app.get("/")

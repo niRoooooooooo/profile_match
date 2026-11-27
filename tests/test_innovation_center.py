@@ -65,10 +65,27 @@ class StructureAndIsolationTests(unittest.TestCase):
                                r"localStorage|sessionStorage|indexedDB|document\.cookie|/api/|"
                                r"invention-document|invention-profiles|https?://(?!www.w3.org/2000/svg)",
                                re.IGNORECASE)
-        for path in [*IC_JS, FRONTEND / "js" / "role-switcher.js"]:
+        for path in IC_JS:
             if path.name == "sample-reports.js":
                 continue
             self.assertEqual(forbidden.findall(read(path)), [], path.name)
+
+    def test_role_switcher_only_uses_server_authorization(self):
+        # Phase 5.4.2: the interface list comes only from GET /api/access/me; the
+        # switcher may otherwise only start/end/check the server UI sessions.
+        text = read(FRONTEND / "js" / "role-switcher.js")
+        self.assertEqual(re.findall(r"\bfetch\s*\(", text), ["fetch("], "single request helper")
+        self.assertEqual(sorted(set(re.findall(r"'(/(?:api|admin|institutional)/[^']*)'", text))),
+                         ["/admin/session", "/api/access/me", "/institutional/session"])
+        never = re.compile(r"XMLHttpRequest|WebSocket|sendBeacon|localStorage|indexedDB|"
+                           r"document\.cookie|\.from\s*\(|\.rpc\s*\(|\.storage\b|signOut\s*\(|"
+                           r"signIn|invention|https?://", re.IGNORECASE)
+        self.assertEqual(never.findall(text), [])
+        self.assertNotIn("sessionStorage", text)
+        # No built-in role list, public role pages or "coming soon" entries.
+        for stale in ("/assets/roles/", "comingSoon", "Coming soon", "requiresAdminAccess",
+                      "PROFILE_MATCH_ROLES"):
+            self.assertNotIn(stale, text)
 
     def test_no_charts_graphs_or_analytics_in_this_phase(self):
         self.assertFalse((FRONTEND / "js" / "charts.js").exists())
@@ -150,14 +167,36 @@ class StructureAndIsolationTests(unittest.TestCase):
         for path in (ROOT / "backend" / "app").rglob("*.py"):
             self.assertNotIn("roles/innovation-center", read(path), path.name)
 
-    def test_switcher_roles_and_links(self):
-        text = read(FRONTEND / "js" / "role-switcher.js")
-        ids = re.findall(r"\{id: '([a-z-]+)', label:", text)
-        self.assertEqual(ids, ["innovator", "innovation-center", "industry-liaison",
-                               "management", "administrator", "industry-partner"])
-        self.assertEqual(text.count("comingSoon: true"), 4)
-        self.assertIn("href: '/dashboard'", text)
-        self.assertIn("href: '/assets/roles/innovation-center/index.html'", text)
+    def test_institutional_files_are_never_public(self):
+        # Phase 5.4.1: no institutional file is served by the public /assets
+        # mount; the Innovation Center opens only through its protected route.
+        import _fixtures  # noqa: F401  (adds backend to sys.path)
+        from fastapi.testclient import TestClient
+        from app.main import app
+
+        client = TestClient(app)
+        for role in ("innovation-center", "industry-liaison", "management", "administrator",
+                     "industry-partner"):
+            for path in (f"/assets/roles/{role}/index.html", f"/assets/roles/{role}/",
+                         f"/assets/roles/%2e%2e/roles/{role}/index.html",
+                         f"/assets/ROLES/{role.upper()}/index.html",
+                         f"/assets/roles%5c{role}%5cindex.html",
+                         f"/assets/css/../roles/{role}/index.html"):
+                self.assertEqual(client.get(path).status_code, 404, path)
+        for name in ("overview.html", "css/innovation-center.css", "js/shell.js",
+                     "js/data/mock-data.js", "js/data/sample-reports.js"):
+            self.assertEqual(client.get(f"/assets/roles/innovation-center/{name}").status_code,
+                             404, name)
+            protected = client.get(f"/institutional/innovation-center/{name}")
+            self.assertEqual(protected.status_code, 401, name)       # no session
+            self.assertNotIn("Innovation Center", protected.text, name)
+            self.assertEqual(protected.headers["cache-control"], "no-store, max-age=0")
+        for role in ("industry-liaison", "management", "industry-partner"):
+            self.assertEqual(client.get(f"/institutional/{role}/index.html").status_code, 404)
+        # Shared frontend files needed by the Innovator dashboard stay public.
+        for path in ("/assets/css/style.css", "/assets/css/roles.css", "/assets/js/api.js",
+                     "/assets/js/role-switcher.js", "/assets/js/dashboard.js"):
+            self.assertEqual(client.get(path).status_code, 200, path)
 
 
 # --------------------------------------------------------------------------
@@ -452,45 +491,163 @@ class BrowserTests(unittest.TestCase):
         self.assertTrue(out["noNull"])
         self.assertEqual(out["network"], [])
 
-    def test_role_switcher_menu_and_keyboard(self):
+    def test_offline_pages_show_no_role_switcher(self):
         out = self.run_in_browser(1440, r"""async () => {
   const win = await open('overview.html'); const d = win.document;
-  const button = d.querySelector('.role-switcher-button');
-  out.label = button.textContent;
-  out.expandedBefore = button.getAttribute('aria-expanded');
-  button.click(); await wait(20);
-  out.expanded = button.getAttribute('aria-expanded');
-  const links = [...d.querySelectorAll('.role-switcher-panel a')];
-  out.links = links.map(a => [a.textContent, a.getAttribute('href')]);
-  out.current = d.querySelector('.role-switcher-panel a[aria-current="page"]').dataset.roleId;
-  out.focus = d.activeElement.dataset.roleId;
-  d.activeElement.dispatchEvent(new win.KeyboardEvent('keydown', {key: 'ArrowDown', bubbles: true}));
-  out.focusNext = d.activeElement.dataset.roleId;
-  d.activeElement.dispatchEvent(new win.KeyboardEvent('keydown', {key: 'Escape', bubbles: true}));
-  out.closed = d.querySelector('.role-switcher-panel').hidden;
-  out.focusBack = d.activeElement === button;
+  const host = d.getElementById('roleSwitcher');
+  out.hidden = host.hidden; out.children = host.children.length;
   out.account = d.getElementById('accountName').textContent;
   out.back = d.querySelector('.ic-nav .nav-back').getAttribute('href');
-  const soon = await open('../management/index.html');
-  out.soonCurrent = soon.document.querySelector('.role-switcher-current').textContent;
 }""")
-        self.assertEqual(out["label"], "Switch roleInnovation Center ▾")
-        self.assertEqual((out["expandedBefore"], out["expanded"]), ("false", "true"))
-        self.assertEqual(out["links"], [
-            ["Innovator / Researcher", "/dashboard"],
-            ["Innovation Center Current", "/assets/roles/innovation-center/index.html"],
-            ["Industry Liaison Office Coming soon", "/assets/roles/industry-liaison/index.html"],
-            ["Management / Executive Coming soon", "/assets/roles/management/index.html"],
-            ["Administrator Coming soon", "/assets/roles/administrator/index.html"],
-            ["Industry Partner Coming soon", "/assets/roles/industry-partner/index.html"]])
-        self.assertEqual(out["current"], "innovation-center")
-        self.assertEqual(out["focus"], "innovation-center")
-        self.assertEqual(out["focusNext"], "industry-liaison")
-        self.assertTrue(out["closed"])
-        self.assertTrue(out["focusBack"])
+        self.assertEqual((out["hidden"], out["children"]), (True, 0))
         self.assertEqual(out["account"], "Not signed in (offline file)")
         self.assertEqual(out["back"], "/dashboard")
-        self.assertEqual(out["soonCurrent"], "Management / Executive")
+
+    def test_role_switcher_shows_only_server_authorized_interfaces(self):
+        # The page's Supabase client and fetch are stubbed: the switcher must
+        # use only what GET /api/access/me returns for the signed-in account.
+        script = r"""async () => {
+  const SWITCHER = '__SWITCHER__';
+  const I = {
+    innovator: {id: 'innovator', label: 'Innovator / Researcher', href: '/dashboard', available: true},
+    admin: {id: 'administrator', label: 'Administrator', href: '/admin/overview.html', available: true},
+    staff: {id: 'administrator', label: 'Admin Employee', href: '/admin/overview.html', available: true},
+    ic: {id: 'innovation_center', label: 'Innovation Center',
+         href: '/institutional/innovation-center/overview.html', available: true},
+    il: {id: 'industry_liaison', label: 'Industry Liaison', href: null, available: false}};
+  const me = (user, list, wait) => ({status: 200, wait, body: {user_id: user, account_status: 'active',
+                                                              interfaces: list}});
+  const icSession = {status: 200, body: {actors: {innovation_center: {}}, expires_at: Date.now() / 1000 + 900}};
+  async function mount(role, plan, settle) {
+    window.currentPlan = plan;
+    frame.srcdoc = `<!DOCTYPE html><html><body data-role="${role}"><header>
+      <div id="roleSwitcher"></div><button id="logoutButton" type="button">Sign out</button></header>
+      <div class="dev-banner">banner</div><div class="app"><p id="content">content</p></div>
+      <script>
+        window.plan = parent.currentPlan; window.calls = []; window.authCallbacks = [];
+        window.getSupabase = async () => ({auth: {
+          getSession: async () => ({data: {session: window.plan.user
+            ? {access_token: 'test-token', user: {id: window.plan.user}} : null}}),
+          onAuthStateChange: cb => { window.authCallbacks.push(cb);
+                                     return {data: {subscription: {unsubscribe() {}}}}; }}});
+        window.fetch = async (url, options) => {
+          const method = (options && options.method) || 'GET';
+          window.calls.push([String(url), method,
+                             Boolean(options && options.headers && options.headers.Authorization)]);
+          const answer = window.plan.respond(String(url), method, window.plan.user) || {status: 404, body: {}};
+          if (answer.wait) await new Promise(r => setTimeout(r, answer.wait));
+          return new Response(JSON.stringify(answer.body || {}), {status: answer.status,
+                              headers: {'Content-Type': 'application/json'}});
+        };
+      <\/script><script src="${SWITCHER}"><\/script></body></html>`;
+    await new Promise(r => frame.onload = r);
+    await wait(settle || 400);
+    return frame.contentWindow;
+  }
+  const state = win => { const d = win.document, host = d.getElementById('roleSwitcher');
+    return {hidden: host.hidden, links: [...host.querySelectorAll('a')].map(a => [a.textContent, a.getAttribute('href')]),
+            locked: Boolean(d.getElementById('interfaceLocked')), content: Boolean(d.getElementById('content'))}; };
+
+  // Ordinary Innovator: no switcher at all.
+  let win = await mount('innovator', {user: 'U1', respond: url => url === '/api/access/me'
+    ? me('U1', [I.innovator]) : null});
+  out.ordinary = state(win);
+
+  // Administrator: hidden while pending, then Innovator + Administrator only.
+  win = await mount('innovator', {user: 'U1', respond: url => url === '/api/access/me'
+    ? me('U1', [I.innovator, I.admin, I.il], 1500) : null}, 300);
+  out.pending = state(win).hidden;
+  await wait(1700);
+  out.admin = state(win);
+  const d = win.document, button = d.querySelector('.role-switcher-button');
+  out.label = button.textContent;
+  button.click(); await wait(20);
+  out.expanded = button.getAttribute('aria-expanded');
+  out.focus = d.activeElement.dataset.interfaceId;
+  d.activeElement.dispatchEvent(new win.KeyboardEvent('keydown', {key: 'ArrowDown', bubbles: true}));
+  out.focusNext = d.activeElement.dataset.interfaceId;
+  d.activeElement.dispatchEvent(new win.KeyboardEvent('keydown', {key: 'Escape', bubbles: true}));
+  out.closed = d.querySelector('.role-switcher-panel').hidden && d.activeElement === button;
+  d.getElementById('logoutButton').click(); await wait(50);
+  out.logout = win.calls.filter(c => c[1] === 'DELETE').map(c => c[0]).sort();
+  out.tokenInUrl = win.calls.some(c => c[0].includes('test-token'));
+  out.bearerTo = [...new Set(win.calls.filter(c => c[2]).map(c => c[0]))];
+
+  // Admin Employee label comes from the server.
+  win = await mount('administrator', {user: 'U1', respond: url => url === '/api/access/me'
+    ? me('U1', [I.innovator, I.staff]) : null});
+  out.staff = state(win).links;
+
+  // Innovation Center member on the Innovation Center page.
+  win = await mount('innovation-center', {user: 'U1', respond: url => url === '/api/access/me'
+    ? me('U1', [I.innovator, I.ic]) : (url === '/institutional/session' ? icSession : null)});
+  out.ic = state(win);
+  out.icCurrent = win.document.querySelector('.role-switcher-current').textContent;
+
+  // Authorization unavailable: hidden.
+  win = await mount('innovator', {user: 'U1', respond: url => url === '/api/access/me'
+    ? {status: 503, body: {}} : null});
+  out.unavailable = state(win);
+
+  // Membership revoked while on the page: content removed, UI sessions ended.
+  win = await mount('innovation-center', {user: 'U1', respond: url => url === '/api/access/me'
+    ? me('U1', [I.innovator]) : (url === '/institutional/session' ? icSession : null)});
+  out.revoked = state(win);
+  out.revokedCalls = win.calls.filter(c => c[1] === 'DELETE').map(c => c[0]).sort();
+
+  // Institutional UI session expired: content removed.
+  win = await mount('innovation-center', {user: 'U1', respond: url => url === '/api/access/me'
+    ? me('U1', [I.innovator, I.ic]) : (url === '/institutional/session' ? {status: 401, body: {}} : null)});
+  out.expired = [state(win), win.document.querySelector('#interfaceLocked h1').textContent];
+
+  // A slow response for the previous account never renders for the new one.
+  win = await mount('innovator', {user: 'U1', respond: (url, m, user) => url === '/api/access/me'
+    ? me('U1', [I.innovator, I.admin], 800) : null}, 100);
+  win.plan.user = 'U2';
+  await wait(1200);
+  out.stale = state(win);
+
+  // Account switch after the list is shown: hidden, sessions ended, re-checked.
+  win = await mount('innovator', {user: 'U1', respond: (url, m, user) => url === '/api/access/me'
+    ? me(user, user === 'U1' ? [I.innovator, I.admin] : [I.innovator]) : null});
+  out.beforeSwitch = state(win).links.length;
+  win.plan.user = 'U2';
+  win.authCallbacks.forEach(cb => cb('SIGNED_IN', {user: {id: 'U2'}}));
+  await wait(400);
+  out.afterSwitch = state(win);
+  out.switchCalls = win.calls.filter(c => c[1] === 'DELETE').map(c => c[0]).sort();
+}""".replace("__SWITCHER__", (FRONTEND / "js" / "role-switcher.js").as_uri())
+        out = self.run_in_browser(1440, script)
+        hidden = {"hidden": True, "links": [], "locked": False, "content": True}
+        sessions = ["/admin/session", "/institutional/session"]
+        self.assertEqual(out["ordinary"], hidden)
+        self.assertTrue(out["pending"])
+        self.assertEqual(out["admin"]["links"], [["Innovator / Researcher Current", "/dashboard"],
+                                                 ["Administrator", "/admin/overview.html"]])
+        self.assertFalse(out["admin"]["hidden"])
+        self.assertEqual(out["label"], "Switch interfaceInnovator / Researcher ▾")
+        self.assertEqual(out["expanded"], "true")
+        self.assertEqual((out["focus"], out["focusNext"]), ("innovator", "administrator"))
+        self.assertTrue(out["closed"])
+        self.assertEqual(out["logout"], sessions)
+        self.assertFalse(out["tokenInUrl"])
+        self.assertEqual(out["bearerTo"], ["/api/access/me"])
+        self.assertEqual(out["staff"], [["Innovator / Researcher", "/dashboard"],
+                                        ["Admin Employee Current", "/admin/overview.html"]])
+        self.assertEqual(out["ic"]["links"], [
+            ["Innovator / Researcher", "/dashboard"],
+            ["Innovation Center Current", "/institutional/innovation-center/overview.html"]])
+        self.assertEqual((out["ic"]["locked"], out["ic"]["content"]), (False, True))
+        self.assertEqual(out["icCurrent"], "Innovation Center")
+        self.assertEqual(out["unavailable"], hidden)
+        self.assertEqual(out["revoked"], {"hidden": True, "links": [], "locked": True, "content": False})
+        self.assertEqual(out["revokedCalls"], sessions)
+        self.assertEqual(out["expired"][0]["content"], False)
+        self.assertEqual(out["expired"][1], "Session ended")
+        self.assertEqual(out["stale"], hidden)
+        self.assertEqual(out["beforeSwitch"], 2)
+        self.assertEqual(out["afterSwitch"], hidden)
+        self.assertEqual(out["switchCalls"], sessions)
 
     def test_mobile_layouts_do_not_scroll_sideways(self):
         out = self.run_in_browser(390, r"""async () => {

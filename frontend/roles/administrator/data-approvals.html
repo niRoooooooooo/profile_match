@@ -1,0 +1,79 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="robots" content="noindex, nofollow">
+  <title>Data Approvals · Administrator | Profile Match</title>
+  <link rel="stylesheet" href="/assets/css/style.css">
+  <link rel="stylesheet" href="/assets/css/roles.css">
+  <link rel="stylesheet" href="css/admin.css">
+  <script src="/assets/js/role-switcher.js" defer></script>
+  <script src="/assets/js/session-header.js" defer></script>
+  <script src="js/admin.js" defer></script>
+  <script src="js/navigation.js" defer></script>
+  <script src="js/approvals.js" defer></script>
+</head>
+<body data-role="administrator" data-auth="pending" data-section="approvals">
+<a class="skip-link" href="#main">Skip to main content</a>
+<header class="top role-top">
+  <div class="brand">Partner Matching Agent<small id="adminRoleLabel">Administrator</small></div>
+  <div id="roleSwitcher"></div>
+  <div class="account-area">
+    <span id="accountName" class="account-name">Checking account…</span>
+    <button class="btn" id="logoutButton" type="button">Sign out</button>
+  </div>
+</header>
+<div class="dev-banner preview-banner" role="note">
+  <strong>Data not connected.</strong> No drafts are loaded. Approval decisions are not
+  connected, and approved organization profiles are never changed from this page.
+</div>
+<div class="app">
+  <aside class="sidebar" id="adminSidebar">
+    <noscript><p class="small">Navigation needs JavaScript. <a href="overview.html">Overview</a></p></noscript>
+  </aside>
+  <main id="main" class="content adm-content" tabindex="-1">
+    <div class="page-head">
+      <div>
+        <h1>Data approvals</h1>
+        <p class="lead">Organization profile drafts prepared by the Data Collection Agent or from
+          employee-uploaded documents. Nothing becomes part of an approved profile without an
+          Administrator decision.</p>
+      </div>
+      <span class="preview-tag">Drafts not connected</span>
+    </div>
+
+    <section aria-labelledby="find-h">
+      <h2 id="find-h" class="sr-only">Filter drafts</h2>
+      <form class="filters" data-filters="draftCount" role="search" aria-label="Filter drafts">
+        <label class="filter grow" for="d-search">Search drafts
+          <input id="d-search" type="search" autocomplete="off" placeholder="Organization name">
+        </label>
+        <label class="filter" for="d-source">Source type
+          <select id="d-source" data-source-types><option value="">All source types</option></select>
+        </label>
+        <label class="filter" for="d-status">Review status
+          <select id="d-status">
+            <option value="">All review statuses</option>
+            <option>Not started</option><option>In review</option>
+            <option>Awaiting clarification</option><option>Ready for decision</option>
+          </select>
+        </label>
+        <label class="filter" for="d-from">Submitted from<input id="d-from" type="date"></label>
+        <label class="filter" for="d-to">Submitted to<input id="d-to" type="date"></label>
+        <button class="btn small" type="reset">Clear filters</button>
+      </form>
+      <p id="draftCount" class="result-count" role="status"></p>
+    </section>
+
+    <div data-tabs id="approvalTabs">
+      <div class="tablist" role="tablist" aria-label="Draft categories" id="approvalTablist"></div>
+      <div id="approvalPanels"></div>
+    </div>
+
+    <p class="small"><a href="approval-review.html">Open the approval review layout</a> to see how a
+      draft is reviewed field by field against its evidence.</p>
+  </main>
+</div>
+</body>
+</html>

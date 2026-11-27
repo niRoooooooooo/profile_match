@@ -541,8 +541,9 @@
         'Only an authorised reviewer will be able to record an outcome, with reasons, after ' +
         'staff access is implemented. Nothing can be approved or rejected yet.'}),
       el('div', {class: 'outcomes'},
-        futureButton('Verified'), futureButton('Request clarification'),
-        futureButton('Rejected / On hold')),
+        futureButton('Verified', null, 'innovation_center.profiles.approve'),
+        futureButton('Request clarification', null, 'innovation_center.profiles.request_correction'),
+        futureButton('Rejected / On hold', null, 'innovation_center.profiles.reject')),
       el('p', {class: 'muted small', text:
         'An innovator submission never becomes institutionally verified automatically.'}));
     return panel;

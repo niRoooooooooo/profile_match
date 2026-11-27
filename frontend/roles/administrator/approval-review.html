@@ -1,0 +1,149 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="robots" content="noindex, nofollow">
+  <title>Approval Review · Administrator | Profile Match</title>
+  <link rel="stylesheet" href="/assets/css/style.css">
+  <link rel="stylesheet" href="/assets/css/roles.css">
+  <link rel="stylesheet" href="css/admin.css">
+  <script src="/assets/js/role-switcher.js" defer></script>
+  <script src="/assets/js/session-header.js" defer></script>
+  <script src="js/admin.js" defer></script>
+  <script src="js/navigation.js" defer></script>
+  <script src="js/approvals.js" defer></script>
+</head>
+<body data-role="administrator" data-auth="pending" data-section="approvals" data-subpage="approval-review">
+<a class="skip-link" href="#main">Skip to main content</a>
+<header class="top role-top">
+  <div class="brand">Partner Matching Agent<small id="adminRoleLabel">Administrator</small></div>
+  <div id="roleSwitcher"></div>
+  <div class="account-area">
+    <span id="accountName" class="account-name">Checking account…</span>
+    <button class="btn" id="logoutButton" type="button">Sign out</button>
+  </div>
+</header>
+<div class="dev-banner preview-banner" role="note">
+  <strong>Data not connected.</strong> No draft is loaded. Review decisions are not connected.
+  Reviewer notes stay in this browser tab and are not saved.
+</div>
+<div class="app">
+  <aside class="sidebar" id="adminSidebar">
+    <noscript><p class="small">Navigation needs JavaScript. <a href="overview.html">Overview</a></p></noscript>
+  </aside>
+  <main id="main" class="content adm-content" tabindex="-1">
+    <p class="breadcrumb"><a href="data-approvals.html">Data approvals</a> › Approval review</p>
+    <div class="page-head">
+      <div>
+        <h1>Approval review</h1>
+        <p class="lead">Evidence-first comparison of a proposed organization profile against the
+          current approved profile. No draft is selected.</p>
+      </div>
+      <span class="preview-tag">No draft loaded</span>
+    </div>
+    <p class="notice warn"><strong>The approved profile stays unchanged</strong> until an
+      Administrator explicitly approves the draft. AI-collected information never replaces approved
+      information automatically.</p>
+    <dl class="detail-grid">
+      <dt>Organization</dt><dd class="unavailable">No draft selected</dd>
+      <dt>Draft type</dt><dd class="unavailable">—</dd>
+      <dt>Submitted</dt><dd class="unavailable">—</dd>
+      <dt>Origin</dt><dd class="unavailable">—</dd>
+    </dl>
+
+    <section aria-labelledby="summary-h">
+      <h2 id="summary-h" class="section-title">Change summary</h2>
+      <ul class="kpi-grid" id="changeSummary"></ul>
+    </section>
+
+    <section class="panel" aria-labelledby="compare-h">
+      <h2 id="compare-h">Side-by-side field comparison</h2>
+      <ul class="legend" aria-label="Change types" id="changeLegend"></ul>
+      <form class="filters" aria-label="Show change types" id="compareFilter">
+        <label class="filter" for="c-type">Show
+          <select id="c-type">
+            <option value="">All fields</option>
+            <option>Newly added</option><option>Modified</option><option>Removed</option>
+            <option>Unchanged</option><option>Contradictory</option>
+          </select>
+        </label>
+      </form>
+      <div class="table-host">
+        <table class="data-table compare-table">
+          <caption class="sr-only">Current approved profile compared with proposed profile</caption>
+          <thead><tr><th scope="col">Field</th><th scope="col">Current approved profile</th>
+                     <th scope="col">Proposed updated profile</th><th scope="col">Change and decision</th></tr></thead>
+          <tbody id="compareRows"></tbody>
+        </table>
+      </div>
+      <p class="small muted">For each changed field the reviewer will be able to
+        <strong>accept</strong> or <strong>reject</strong> the individual change.</p>
+      <div class="toolbar">
+        <button data-requires="organizations.profiles.approve organizations.profiles.reject" data-nc>Accept selected changes</button>
+        <button data-requires="organizations.profiles.approve organizations.profiles.reject" data-nc>Reject selected changes</button>
+      </div>
+    </section>
+
+    <div class="grid-2" style="margin-top:18px">
+      <section class="panel" aria-labelledby="current-h">
+        <h2 id="current-h">Current approved profile</h2>
+        <div class="empty-state"><strong>No approved profile</strong>
+          <p>The approved profile for the selected organization is shown here, read-only.</p></div>
+      </section>
+      <section class="panel" aria-labelledby="proposed-h">
+        <h2 id="proposed-h">Proposed updated profile</h2>
+        <div class="empty-state"><strong>No proposed profile</strong>
+          <p>The draft prepared from collected sources or uploaded documents is shown here.</p></div>
+      </section>
+    </div>
+
+    <section class="panel" style="margin-top:18px" aria-labelledby="evidence-h">
+      <h2 id="evidence-h">Source evidence</h2>
+      <div class="table-host">
+        <table class="data-table">
+          <caption class="sr-only">Evidence supporting proposed changes</caption>
+          <thead><tr><th scope="col">Field</th><th scope="col">Source URL</th>
+                     <th scope="col">Supporting quotation</th><th scope="col">Publication date</th>
+                     <th scope="col">Retrieval date</th></tr></thead>
+          <tbody id="evidenceRows"></tbody>
+        </table>
+      </div>
+    </section>
+
+    <div class="grid-2" style="margin-top:18px">
+      <section class="panel" aria-labelledby="docs-h">
+        <h2 id="docs-h">Uploaded supporting documents</h2>
+        <div class="empty-state"><strong>No documents</strong>
+          <p>Documents uploaded by employees for this draft will be listed here with the passages used.</p></div>
+      </section>
+      <section class="panel" aria-labelledby="missing-h">
+        <h2 id="missing-h">Missing information</h2>
+        <div class="empty-state"><strong>Nothing to show</strong>
+          <p>Profile fields that no source could support will be listed here.</p></div>
+      </section>
+    </div>
+
+    <section class="panel" style="margin-top:18px" aria-labelledby="notes-h">
+      <h2 id="notes-h">Reviewer notes</h2>
+      <label class="form-field" for="reviewNotes">Notes for this review (not saved)
+        <textarea id="reviewNotes" rows="4"></textarea>
+        <span class="field-hint" id="notesCount" aria-live="polite"></span>
+      </label>
+    </section>
+
+    <section class="panel" aria-labelledby="decision-h">
+      <h2 id="decision-h">Decision</h2>
+      <p class="small muted">Decisions will be recorded in the audit log. Approving submits the
+        accepted changes as a new approved profile version; the previous version is kept.</p>
+      <div class="toolbar">
+        <button data-requires="organizations.profiles.edit" data-nc>Edit draft</button>
+        <button data-requires="organizations.profiles.approve organizations.profiles.reject" data-nc>Request clarification</button>
+        <button data-requires="organizations.profiles.approve" data-nc="Not connected — the approved profile is not changed.">Approve and submit</button>
+        <button data-requires="organizations.profiles.reject" data-nc>Reject draft</button>
+      </div>
+    </section>
+  </main>
+</div>
+</body>
+</html>

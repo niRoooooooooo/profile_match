@@ -1,0 +1,161 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="robots" content="noindex, nofollow">
+  <title>Organizations · Administrator | Profile Match</title>
+  <link rel="stylesheet" href="/assets/css/style.css">
+  <link rel="stylesheet" href="/assets/css/roles.css">
+  <link rel="stylesheet" href="css/admin.css">
+  <script src="/assets/js/role-switcher.js" defer></script>
+  <script src="/assets/js/session-header.js" defer></script>
+  <script src="js/admin.js" defer></script>
+  <script src="js/navigation.js" defer></script>
+  <script src="js/organizations.js" defer></script>
+</head>
+<body data-role="administrator" data-auth="pending" data-section="organizations">
+<a class="skip-link" href="#main">Skip to main content</a>
+<header class="top role-top">
+  <div class="brand">Partner Matching Agent<small id="adminRoleLabel">Administrator</small></div>
+  <div id="roleSwitcher"></div>
+  <div class="account-area">
+    <span id="accountName" class="account-name">Checking account…</span>
+    <button class="btn" id="logoutButton" type="button">Sign out</button>
+  </div>
+</header>
+<div class="dev-banner preview-banner" role="note">
+  <strong>Data not connected.</strong> No organization records are loaded. Adding, editing,
+  scanning, archiving and merging organizations are not connected.
+</div>
+<div class="app">
+  <aside class="sidebar" id="adminSidebar">
+    <noscript><p class="small">Navigation needs JavaScript. <a href="overview.html">Overview</a></p></noscript>
+  </aside>
+  <main id="main" class="content adm-content" tabindex="-1">
+    <div class="page-head">
+      <div>
+        <h1>Organizations</h1>
+        <p class="lead">Directory of companies, investors, manufacturers, licensees, co-developers,
+          venture capital firms, research institutions and government agencies considered for partnership.</p>
+      </div>
+      <span class="preview-tag">Records not connected</span>
+    </div>
+
+    <div class="toolbar">
+      <button type="button" class="btn primary small" data-open-dialog="dlg-add-org" aria-haspopup="dialog" data-requires="organizations.create">Add organization…</button>
+      <a class="btn small" href="organization-profile.html#documents-h" data-requires="organizations.documents.upload">Upload supporting documents</a>
+      <a class="btn small" href="organization-profile.html">Open organization profile layout</a>
+      <button data-requires="agents.collection.execute" data-nc="Not connected — the Data Collection Agent is not available yet.">Scan organization</button>
+    </div>
+
+    <section aria-labelledby="find-h">
+      <h2 id="find-h" class="sr-only">Find organizations</h2>
+      <form class="filters" data-filters="orgCount" role="search" aria-label="Filter organizations">
+        <label class="filter grow" for="o-search">Search organizations
+          <input id="o-search" type="search" autocomplete="off" placeholder="Name, website or keyword">
+        </label>
+        <label class="filter" for="o-category">Category
+          <select id="o-category" data-org-categories><option value="">All categories</option></select>
+        </label>
+        <label class="filter" for="o-industry">Industry
+          <select id="o-industry" data-industries><option value="">All industries</option></select>
+        </label>
+        <label class="filter" for="o-region">Geographic region
+          <select id="o-region" data-regions><option value="">All regions</option></select>
+        </label>
+        <label class="filter" for="o-approval">Approval status
+          <select id="o-approval" data-approval-statuses><option value="">All statuses</option></select>
+        </label>
+        <button class="btn small" type="reset">Clear filters</button>
+      </form>
+      <p id="orgCount" class="result-count" role="status"></p>
+    </section>
+
+    <div data-tabs>
+      <div class="tablist" role="tablist" aria-label="Organization lists">
+        <button type="button" role="tab" id="t-active" aria-controls="p-active" aria-selected="true">Directory</button>
+        <button type="button" role="tab" id="t-archived" aria-controls="p-archived">Archived</button>
+        <button type="button" role="tab" id="t-dupes" aria-controls="p-dupes">Possible duplicates</button>
+      </div>
+
+      <div role="tabpanel" id="p-active" aria-labelledby="t-active">
+        <div class="table-host">
+          <table class="data-table">
+            <caption class="sr-only">Organization directory</caption>
+            <thead><tr><th scope="col">Organization</th><th scope="col">Category</th><th scope="col">Industry</th>
+                       <th scope="col">Region</th><th scope="col">Approval status</th>
+                       <th scope="col">Last updated</th><th scope="col">Actions</th></tr></thead>
+            <tbody id="orgRows"></tbody>
+          </table>
+        </div>
+        <p class="small muted">Each organization row will provide: <strong>View</strong> (opens the
+          organization profile), <strong>Edit</strong>, <strong>Upload documents</strong>,
+          <strong>Scan now</strong> and <strong>Archive</strong>.</p>
+      </div>
+
+      <div role="tabpanel" id="p-archived" aria-labelledby="t-archived" hidden>
+        <div class="table-host">
+          <table class="data-table">
+            <caption class="sr-only">Archived organizations</caption>
+            <thead><tr><th scope="col">Organization</th><th scope="col">Category</th>
+                       <th scope="col">Archived on</th><th scope="col">Archived by</th>
+                       <th scope="col">Actions</th></tr></thead>
+            <tbody id="archivedRows"></tbody>
+          </table>
+        </div>
+        <div class="toolbar" data-requires="organizations.archive"><button data-nc>Restore selected</button></div>
+      </div>
+
+      <div role="tabpanel" id="p-dupes" aria-labelledby="t-dupes" hidden>
+        <p class="small muted">Possible duplicate records (same website, similar names or shared
+          identifiers) will be grouped here. Merging keeps one approved profile and its full source history.</p>
+        <div class="table-host">
+          <table class="data-table">
+            <caption class="sr-only">Possible duplicate organizations</caption>
+            <thead><tr><th scope="col">Duplicate group</th><th scope="col">Records</th>
+                       <th scope="col">Matching signals</th><th scope="col">Actions</th></tr></thead>
+            <tbody id="dupeRows"></tbody>
+          </table>
+        </div>
+        <div class="toolbar">
+          <button data-requires="organizations.edit" data-nc>Merge records</button>
+          <button data-requires="organizations.edit" data-nc>Mark as not duplicates</button>
+        </div>
+      </div>
+    </div>
+
+    <dialog id="dlg-add-org" class="adm-dialog" aria-labelledby="dlg-add-org-h" data-requires="organizations.create">
+      <form data-preview-form="Entries checked in this browser only. Creating organizations is not connected — nothing was stored or sent.">
+        <div class="dialog-body">
+          <h2 id="dlg-add-org-h">Add organization</h2>
+          <p class="small muted">A new organization starts as a draft that requires Administrator approval.</p>
+          <div class="form-grid-2">
+            <label class="form-field span-2" for="a-name">Organization name<input id="a-name" type="text" required maxlength="200"></label>
+            <label class="form-field" for="a-category">Category
+              <select id="a-category" required data-org-categories><option value="">Select a category</option></select>
+            </label>
+            <label class="form-field" for="a-industry">Industry
+              <select id="a-industry" data-industries><option value="">Select an industry</option></select>
+            </label>
+            <label class="form-field" for="a-website">Official website
+              <input id="a-website" type="url" placeholder="https://" inputmode="url">
+              <span class="field-hint">Must start with https:// or http://</span></label>
+            <label class="form-field" for="a-region">Headquarters region
+              <select id="a-region" data-regions><option value="">Select a region</option></select>
+            </label>
+            <label class="form-field span-2" for="a-notes">Notes<textarea id="a-notes" rows="3"></textarea></label>
+          </div>
+          <p class="form-status" role="status"></p>
+        </div>
+        <div class="dialog-actions">
+          <button type="button" class="btn small" data-close-dialog>Cancel</button>
+          <button type="submit" class="btn small">Check entries</button>
+          <button data-nc>Create organization</button>
+        </div>
+      </form>
+    </dialog>
+  </main>
+</div>
+</body>
+</html>

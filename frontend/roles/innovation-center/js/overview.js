@@ -4,7 +4,8 @@
 // lists below use the same fictional sample submissions as Profile approvals.
 (function () {
   'use strict';
-  const {el, demoLabel, badge, formatDate, page, trendsPlaceholders, notAvailable} = window.ICShell;
+  const {el, demoLabel, badge, formatDate, page, trendsPlaceholders, notAvailable,
+         can} = window.ICShell;
   const ICData = window.ICData;
 
   const SUMMARY = ['Total inventions', 'Profiles awaiting institutional review',
@@ -33,7 +34,9 @@
 
       trendsPlaceholders());
 
-    // Work lists (sample records, the same ones shown in Profile approvals)
+    // Work lists (sample records, the same ones shown in Profile approvals).
+    // Shown only to accounts that may view inventions.
+    if (!can('innovation_center.inventions.view')) return;
     const pending = ICData.pendingReviews();
     const attention = ICData.attention();
     const activity = ICData.recentActivity(6);

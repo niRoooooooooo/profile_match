@@ -1,0 +1,92 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="robots" content="noindex, nofollow">
+  <title>Organization Profile · Administrator | Profile Match</title>
+  <link rel="stylesheet" href="/assets/css/style.css">
+  <link rel="stylesheet" href="/assets/css/roles.css">
+  <link rel="stylesheet" href="css/admin.css">
+  <script src="/assets/js/role-switcher.js" defer></script>
+  <script src="/assets/js/session-header.js" defer></script>
+  <script src="js/admin.js" defer></script>
+  <script src="js/navigation.js" defer></script>
+  <script src="js/organizations.js" defer></script>
+</head>
+<body data-role="administrator" data-auth="pending" data-section="organizations" data-subpage="organization-profile">
+<a class="skip-link" href="#main">Skip to main content</a>
+<header class="top role-top">
+  <div class="brand">Partner Matching Agent<small id="adminRoleLabel">Administrator</small></div>
+  <div id="roleSwitcher"></div>
+  <div class="account-area">
+    <span id="accountName" class="account-name">Checking account…</span>
+    <button class="btn" id="logoutButton" type="button">Sign out</button>
+  </div>
+</header>
+<div class="dev-banner preview-banner" role="note">
+  <strong>Data not connected.</strong> This is the planned profile layout with no organization
+  loaded. Selected documents stay in this browser tab and are never uploaded.
+</div>
+<div class="app">
+  <aside class="sidebar" id="adminSidebar">
+    <noscript><p class="small">Navigation needs JavaScript. <a href="overview.html">Overview</a></p></noscript>
+  </aside>
+  <main id="main" class="content adm-content" tabindex="-1">
+    <p class="breadcrumb"><a href="organizations.html">Organizations</a> › Organization profile</p>
+    <div class="page-head">
+      <div>
+        <h1>Organization profile</h1>
+        <p class="lead">No organization selected. Open an organization from the directory once records
+          are connected.</p>
+      </div>
+      <span class="preview-tag">No organization loaded</span>
+    </div>
+    <dl class="detail-grid">
+      <dt>Approved profile</dt><dd><span class="badge tone-neutral">None</span></dd>
+      <dt>Pending changes</dt><dd><span class="badge tone-neutral">None</span></dd>
+      <dt>Last collection</dt><dd class="unavailable">Never</dd>
+    </dl>
+
+    <section class="panel" aria-labelledby="actions-h">
+      <h2 id="actions-h">Profile actions</h2>
+      <p class="small muted">AI-generated drafts never replace the approved profile. Every change goes
+        to <a href="data-approvals.html">Data Approvals</a> for an explicit Administrator decision.</p>
+      <div class="toolbar">
+        <button data-requires="organizations.profiles.generate" data-nc>Generate profile draft</button>
+        <button data-requires="agents.collection.execute" data-nc="Not connected — the Data Collection Agent is not available yet.">Scan organization immediately</button>
+        <button data-requires="organizations.documents.upload" data-nc>Process new documents</button>
+        <button data-nc="No approved profile is loaded.">View existing approved profile</button>
+        <a class="btn small" href="approval-review.html" data-requires="organizations.profiles.edit organizations.profiles.approve organizations.profiles.reject">Review pending changes</a>
+        <a class="btn small" href="#sec-versions-h">View previous profile versions</a>
+      </div>
+    </section>
+
+    <section class="panel" aria-labelledby="documents-h" data-requires="organizations.documents.upload organizations.documents.view">
+      <h2 id="documents-h">Supporting documents</h2>
+      <p class="small muted">Select one or more PDF, DOC or DOCX files, such as annual reports,
+        brochures or partnership notes. Processing will compare them against the approved profile and
+        prepare a revision draft for approval.</p>
+      <div class="dropzone" data-file-picker data-requires="organizations.documents.upload">
+        <label class="form-field" for="docInput">Choose documents (PDF, DOC, DOCX)
+          <input id="docInput" type="file" multiple
+                 accept=".pdf,.doc,.docx,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document">
+        </label>
+        <p class="file-status small" role="status" aria-live="polite"></p>
+        <ul class="file-list" aria-label="Selected documents"></ul>
+      </div>
+      <div class="form-actions">
+        <button data-requires="organizations.documents.upload" data-nc="Not connected — documents are listed locally and are not uploaded.">Upload selected documents</button>
+      </div>
+    </section>
+
+    <section class="panel" aria-labelledby="toc-h">
+      <h2 id="toc-h">Profile sections</h2>
+      <ol class="toc" id="profileToc"></ol>
+    </section>
+
+    <div id="profileSections" class="stack" style="margin-top:18px"></div>
+  </main>
+</div>
+</body>
+</html>

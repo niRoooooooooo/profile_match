@@ -1,0 +1,86 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="robots" content="noindex, nofollow">
+  <title>Audit Logs · Administrator | Profile Match</title>
+  <link rel="stylesheet" href="/assets/css/style.css">
+  <link rel="stylesheet" href="/assets/css/roles.css">
+  <link rel="stylesheet" href="css/admin.css">
+  <script src="/assets/js/role-switcher.js" defer></script>
+  <script src="/assets/js/session-header.js" defer></script>
+  <script src="js/admin.js" defer></script>
+  <script src="js/navigation.js" defer></script>
+  <script src="js/audit.js" defer></script>
+</head>
+<body data-role="administrator" data-auth="pending" data-section="audit">
+<a class="skip-link" href="#main">Skip to main content</a>
+<header class="top role-top">
+  <div class="brand">Partner Matching Agent<small id="adminRoleLabel">Administrator</small></div>
+  <div id="roleSwitcher"></div>
+  <div class="account-area">
+    <span id="accountName" class="account-name">Checking account…</span>
+    <button class="btn" id="logoutButton" type="button">Sign out</button>
+  </div>
+</header>
+<div class="dev-banner preview-banner" role="note">
+  <strong>Data not connected.</strong> The audit log is not connected. No audit records are
+  shown or generated.
+</div>
+<div class="app">
+  <aside class="sidebar" id="adminSidebar">
+    <noscript><p class="small">Navigation needs JavaScript. <a href="overview.html">Overview</a></p></noscript>
+  </aside>
+  <main id="main" class="content adm-content" tabindex="-1">
+    <div class="page-head">
+      <div>
+        <h1>Audit logs</h1>
+        <p class="lead">A read-only record of administrative actions, approval decisions, agent
+          executions and system errors.</p>
+      </div>
+      <span class="preview-tag">Records not connected</span>
+    </div>
+
+    <form class="panel" data-filters="auditCount" role="search" aria-label="Filter audit records">
+      <fieldset class="plain">
+        <legend>Event categories</legend>
+        <ul class="check-list" id="auditCategories"></ul>
+      </fieldset>
+      <div class="filters" style="margin-top:12px">
+        <label class="filter grow" for="a-search">Search actor, entity or details
+          <input id="a-search" type="search" autocomplete="off"></label>
+        <label class="filter" for="a-role">Actor role
+          <select id="a-role">
+            <option value="">All roles</option><option>Administrator</option><option>Admin Employee</option>
+            <option>Innovator</option><option>Innovation Center</option><option>Industry Liaison</option>
+            <option>Management</option><option>External Partner</option><option>System / agent</option>
+          </select></label>
+        <label class="filter" for="a-result">Result
+          <select id="a-result">
+            <option value="">All results</option><option>Succeeded</option><option>Failed</option>
+            <option>Denied</option>
+          </select></label>
+        <label class="filter" for="a-from">From<input id="a-from" type="date"></label>
+        <label class="filter" for="a-to">To<input id="a-to" type="date"></label>
+        <button class="btn small" type="reset">Clear filters</button>
+      </div>
+    </form>
+    <p id="auditCount" class="result-count" role="status"></p>
+
+    <div class="table-host">
+      <table class="data-table">
+        <caption class="sr-only">Audit records</caption>
+        <thead><tr><th scope="col">Timestamp</th><th scope="col">Actor</th><th scope="col">Actor role</th>
+                   <th scope="col">Action</th><th scope="col">Affected entity</th>
+                   <th scope="col">Result</th><th scope="col">Details</th></tr></thead>
+        <tbody id="auditRows"></tbody>
+      </table>
+    </div>
+    <div class="toolbar">
+      <button data-nc>Export audit records</button>
+    </div>
+  </main>
+</div>
+</body>
+</html>

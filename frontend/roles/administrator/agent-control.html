@@ -1,0 +1,177 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="robots" content="noindex, nofollow">
+  <title>Agent Control · Administrator | Profile Match</title>
+  <link rel="stylesheet" href="/assets/css/style.css">
+  <link rel="stylesheet" href="/assets/css/roles.css">
+  <link rel="stylesheet" href="css/admin.css">
+  <script src="/assets/js/role-switcher.js" defer></script>
+  <script src="/assets/js/session-header.js" defer></script>
+  <script src="js/admin.js" defer></script>
+  <script src="js/navigation.js" defer></script>
+  <script src="js/organizations.js" defer></script>
+  <script src="js/agents.js" defer></script>
+</head>
+<body data-role="administrator" data-auth="pending" data-section="agents">
+<a class="skip-link" href="#main">Skip to main content</a>
+<header class="top role-top">
+  <div class="brand">Partner Matching Agent<small id="adminRoleLabel">Administrator</small></div>
+  <div id="roleSwitcher"></div>
+  <div class="account-area">
+    <span id="accountName" class="account-name">Checking account…</span>
+    <button class="btn" id="logoutButton" type="button">Sign out</button>
+  </div>
+</header>
+<div class="dev-banner preview-banner" role="note">
+  <strong>Data not connected.</strong> No agent is executed and no schedule is created from
+  this page. The existing Invention Profiling Agent is not invoked or configured here.
+</div>
+<div class="app">
+  <aside class="sidebar" id="adminSidebar">
+    <noscript><p class="small">Navigation needs JavaScript. <a href="overview.html">Overview</a></p></noscript>
+  </aside>
+  <main id="main" class="content adm-content" tabindex="-1">
+    <div class="page-head">
+      <div>
+        <h1>Agent control</h1>
+        <p class="lead">Central control for the ten planned agents. Agents prepare drafts and
+          suggestions only; approved information changes only after an Administrator decision.</p>
+      </div>
+      <span class="preview-tag">Agents not connected</span>
+    </div>
+
+    <section aria-labelledby="agents-h">
+      <h2 id="agents-h" class="section-title">Agents</h2>
+      <ul class="agent-grid" id="agentGrid"></ul>
+    </section>
+
+    <section class="panel" style="margin-top:26px" aria-labelledby="collection-h">
+      <h2 id="collection-h">Data Collection Agent</h2>
+      <p class="small muted">Discovers organizations and collects public business information. Results
+        become organization profile drafts in <a href="data-approvals.html">Data Approvals</a>.</p>
+      <dl class="detail-grid">
+        <dt>Status</dt><dd><span class="badge tone-neutral">Planned — not connected</span></dd>
+        <dt>Collection</dt><dd class="unavailable">Not running</dd>
+        <dt>AI model</dt><dd><span class="badge tone-warn">Not finalized — model benchmarking is ongoing</span></dd>
+      </dl>
+
+      <div data-tabs>
+        <div class="tablist" role="tablist" aria-label="Data Collection Agent">
+          <button type="button" role="tab" id="t-discover" aria-controls="p-discover" data-requires="agents.collection.execute">Discover &amp; search</button>
+          <button type="button" role="tab" id="t-run" aria-controls="p-run" data-requires="agents.collection.execute">Run now</button>
+          <button type="button" role="tab" id="t-schedule" aria-controls="p-schedule" data-requires="agents.collection.schedule">Schedule</button>
+          <button type="button" role="tab" id="t-history" aria-controls="p-history" data-requires="agents.collection.history">Execution history</button>
+          <button type="button" role="tab" id="t-errors" aria-controls="p-errors" data-requires="agents.collection.history">Errors</button>
+        </div>
+
+        <div role="tabpanel" id="p-discover" aria-labelledby="t-discover" data-requires="agents.collection.execute">
+          <form data-preview-form="Search criteria checked in this browser only. The Data Collection Agent is not connected — no search was run.">
+            <p class="small muted">Fill in one or more criteria. Leave all empty to discover new
+              organizations broadly.</p>
+            <div class="form-grid-2">
+              <label class="form-field" for="s-company">Company name
+                <input id="s-company" type="text" maxlength="200" autocomplete="off"></label>
+              <label class="form-field" for="s-category">Organization category
+                <select id="s-category" data-org-categories><option value="">Any category</option></select></label>
+              <label class="form-field" for="s-industry">Industry
+                <select id="s-industry" data-industries><option value="">Any industry</option></select></label>
+              <label class="form-field" for="s-region">Region
+                <select id="s-region" data-regions><option value="">Any region</option></select></label>
+            </div>
+            <p class="form-status" role="status"></p>
+            <div class="form-actions">
+              <button type="submit" class="btn small">Check criteria</button>
+              <button data-nc>Discover new organizations</button>
+              <button data-nc>Search with these criteria</button>
+            </div>
+          </form>
+        </div>
+
+        <div role="tabpanel" id="p-run" aria-labelledby="t-run" hidden data-requires="agents.collection.execute">
+          <div class="grid-2">
+            <div>
+              <h3>Scan one organization</h3>
+              <label class="form-field" for="r-org">Organization
+                <select id="r-org" disabled><option>No organizations available</option></select></label>
+              <div class="form-actions"><button data-nc>Scan selected company immediately</button></div>
+            </div>
+            <div>
+              <h3>Bulk operations</h3>
+              <div class="toolbar">
+                <button data-nc>Refresh all organizations</button>
+                <button data-nc>Process uploaded documents</button>
+                <button data-nc>Pause collection</button>
+                <button data-nc>Resume collection</button>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div role="tabpanel" id="p-schedule" aria-labelledby="t-schedule" hidden data-requires="agents.collection.schedule">
+          <h3 id="schedule-h">Automatic weekly collection</h3>
+          <form data-preview-form="Schedule checked in this browser only. Scheduling is not connected — no schedule was created.">
+            <label class="check" for="sch-enabled"><input type="checkbox" id="sch-enabled"> Enable automatic collection</label>
+            <p id="sch-state" class="small muted" role="status"></p>
+            <div class="form-grid-2">
+              <label class="form-field" for="sch-frequency">Execution frequency
+                <select id="sch-frequency" required>
+                  <option value="1">Every week</option>
+                  <option value="2">Every 2 weeks</option>
+                  <option value="4">Every 4 weeks</option>
+                </select></label>
+              <label class="form-field" for="sch-day">Preferred execution day
+                <select id="sch-day" required>
+                  <option value="">Select a day</option>
+                  <option>Monday</option><option>Tuesday</option><option>Wednesday</option>
+                  <option>Thursday</option><option>Friday</option><option>Saturday</option><option>Sunday</option>
+                </select></label>
+              <label class="form-field" for="sch-time">Preferred execution time
+                <input id="sch-time" type="time" required>
+                <span class="field-hint">Server time zone will be shown once connected.</span></label>
+            </div>
+            <dl class="detail-grid" style="margin-top:14px">
+              <dt>Last execution</dt><dd class="unavailable">Never run</dd>
+              <dt>Next scheduled execution</dt><dd class="unavailable">Not scheduled</dd>
+              <dt>Collection status</dt><dd><span class="badge tone-neutral">Not connected</span></dd>
+            </dl>
+            <p class="small muted">Weekly collection only prepares a revision draft when meaningful
+              changes are detected. It never replaces approved information.</p>
+            <p class="form-status" role="status"></p>
+            <div class="form-actions">
+              <button type="submit" class="btn small">Check schedule</button>
+              <button data-nc>Save schedule</button>
+            </div>
+          </form>
+        </div>
+
+        <div role="tabpanel" id="p-history" aria-labelledby="t-history" hidden data-requires="agents.collection.history">
+          <div class="table-host">
+            <table class="data-table">
+              <caption class="sr-only">Data Collection Agent execution history</caption>
+              <thead><tr><th scope="col">Started</th><th scope="col">Finished</th><th scope="col">Trigger</th>
+                         <th scope="col">Scope</th><th scope="col">Result</th><th scope="col">Details</th></tr></thead>
+              <tbody id="runHistoryRows"></tbody>
+            </table>
+          </div>
+        </div>
+
+        <div role="tabpanel" id="p-errors" aria-labelledby="t-errors" hidden data-requires="agents.collection.history">
+          <div class="table-host">
+            <table class="data-table">
+              <caption class="sr-only">Collection errors</caption>
+              <thead><tr><th scope="col">Time</th><th scope="col">Job</th><th scope="col">Error</th>
+                         <th scope="col">Actions</th></tr></thead>
+              <tbody id="errorRows"></tbody>
+            </table>
+          </div>
+          <div class="toolbar" data-requires="agents.collection.execute"><button data-nc>Retry failed jobs</button></div>
+        </div>
+      </div>
+    </section>
+  </main>
+</div>
+</body>
+</html>

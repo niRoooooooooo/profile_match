@@ -1,0 +1,152 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="robots" content="noindex, nofollow">
+  <title>Overview · Administrator | Profile Match</title>
+  <link rel="stylesheet" href="/assets/css/style.css">
+  <link rel="stylesheet" href="/assets/css/roles.css">
+  <link rel="stylesheet" href="css/admin.css">
+  <script src="/assets/js/role-switcher.js" defer></script>
+  <script src="/assets/js/session-header.js" defer></script>
+  <script src="js/admin.js" defer></script>
+  <script src="js/navigation.js" defer></script>
+  <script src="js/agents.js" defer></script>
+</head>
+<body data-role="administrator" data-auth="pending" data-section="overview">
+<a class="skip-link" href="#main">Skip to main content</a>
+<header class="top role-top">
+  <div class="brand">Partner Matching Agent<small id="adminRoleLabel">Administrator</small></div>
+  <div id="roleSwitcher"></div>
+  <div class="account-area">
+    <span id="accountName" class="account-name">Checking account…</span>
+    <button class="btn" id="logoutButton" type="button">Sign out</button>
+  </div>
+</header>
+<div class="dev-banner preview-banner" role="note">
+  <strong>Data not connected.</strong> Your administrator access is verified by the server, but
+  administrative data and operations are not connected yet: no records are shown, nothing is saved
+  or sent, and unfinished operations stay disabled.
+</div>
+<div class="app">
+  <aside class="sidebar" id="adminSidebar">
+    <noscript><p class="small">Navigation needs JavaScript. <a href="overview.html">Overview</a></p></noscript>
+  </aside>
+  <main id="main" class="content adm-content" tabindex="-1">
+    <div class="page-head">
+      <div>
+        <h1>Administrator overview</h1>
+        <p class="lead">Platform-wide status for users, organizations, data approvals and agents.
+          Figures appear here once the administrator backend is connected.</p>
+      </div>
+      <span class="preview-tag">No live data connected</span>
+    </div>
+
+    <section aria-labelledby="kpi-users-h" data-requires="users.view">
+      <h2 id="kpi-users-h" class="section-title">Users and accounts</h2>
+      <ul class="kpi-grid">
+        <li class="kpi"><span class="kpi-label">Total registered users</span><span class="kpi-value">Not available yet</span></li>
+        <li class="kpi"><span class="kpi-label">Active users</span><span class="kpi-value">Not available yet</span></li>
+        <li class="kpi"><span class="kpi-label">Suspended accounts</span><span class="kpi-value">Not available yet</span></li>
+        <li class="kpi"><span class="kpi-label">Banned accounts</span><span class="kpi-value">Not available yet</span></li>
+      </ul>
+    </section>
+
+    <section aria-labelledby="kpi-org-h" data-requires="organizations.view">
+      <h2 id="kpi-org-h" class="section-title">Organizations and approvals</h2>
+      <ul class="kpi-grid">
+        <li class="kpi"><span class="kpi-label">Total organizations</span><span class="kpi-value">Not available yet</span></li>
+        <li class="kpi"><span class="kpi-label">Approved organization profiles</span><span class="kpi-value">Not available yet</span></li>
+        <li class="kpi"><span class="kpi-label">Pending organization approvals</span><span class="kpi-value">Not available yet</span></li>
+      </ul>
+    </section>
+
+    <section aria-labelledby="kpi-agents-h" data-requires="agents.collection.history">
+      <h2 id="kpi-agents-h" class="section-title">Agents</h2>
+      <ul class="kpi-grid">
+        <li class="kpi"><span class="kpi-label">Agent operational status</span><span class="kpi-value">Not connected</span></li>
+        <li class="kpi"><span class="kpi-label">Failed agent executions</span><span class="kpi-value">Not available yet</span></li>
+        <li class="kpi"><span class="kpi-label">Upcoming scheduled collection</span><span class="kpi-value">No schedule configured</span></li>
+      </ul>
+    </section>
+
+    <div class="grid-2" style="margin-top:24px">
+      <section class="panel" aria-labelledby="activity-h" data-requires="audit.view">
+        <h2 id="activity-h">Recent administrative activities</h2>
+        <div class="empty-state">
+          <strong>No activity to show</strong>
+          <p>Administrative actions will be listed here from the audit log once it is connected.</p>
+        </div>
+        <p class="small" style="margin:10px 0 0"><a href="audit-logs.html">Open audit logs</a></p>
+      </section>
+
+      <section class="panel" aria-labelledby="schedule-h" data-requires="agents.collection.schedule">
+        <h2 id="schedule-h">Upcoming scheduled collection</h2>
+        <dl class="detail-grid">
+          <dt>Automatic weekly collection</dt><dd class="unavailable">Not configured</dd>
+          <dt>Last execution</dt><dd class="unavailable">Never run</dd>
+          <dt>Next scheduled execution</dt><dd class="unavailable">Not scheduled</dd>
+          <dt>Collection status</dt><dd><span class="badge tone-neutral">Not connected</span></dd>
+        </dl>
+        <p class="small" style="margin:10px 0 0"><a href="agent-control.html#collection-h">Configure collection schedule</a></p>
+      </section>
+    </div>
+
+    <section class="panel" style="margin-top:18px" aria-labelledby="agent-status-h" data-requires="agents.collection.history">
+      <h2 id="agent-status-h">Agent operational status</h2>
+      <p class="small muted">Ten agents are planned. Status reporting is not connected yet.</p>
+      <div class="table-host">
+        <table class="data-table">
+          <caption class="sr-only">Planned agents and their status</caption>
+          <thead><tr><th scope="col">Agent</th><th scope="col">Status</th><th scope="col">Last run</th><th scope="col">Failed runs</th></tr></thead>
+          <tbody id="agentStatusRows"></tbody>
+        </table>
+      </div>
+    </section>
+
+    <section aria-labelledby="quick-h">
+      <h2 id="quick-h" class="section-title">Quick navigation</h2>
+      <div class="quick-links">
+        <a href="user-management.html">User Management<span class="meta">Search, review and manage accounts</span></a>
+        <a href="roles-access.html">Roles &amp; Access<span class="meta">Permission matrix for each role</span></a>
+        <a href="organizations.html">Organizations<span class="meta">Organization directory</span></a>
+        <a href="data-approvals.html">Data Approvals<span class="meta">Review organization profile drafts</span></a>
+        <a href="agent-control.html">Agent Control<span class="meta">Agents and data collection</span></a>
+        <a href="data-sources.html">Data Sources<span class="meta">Source registry</span></a>
+        <a href="audit-logs.html">Audit Logs<span class="meta">Administrative history</span></a>
+      </div>
+    </section>
+
+    <section aria-labelledby="workflow-h">
+      <h2 id="workflow-h" class="section-title">Planned organization data workflows</h2>
+      <p class="small muted">Every workflow ends with an explicit Administrator decision. AI-collected
+        information never replaces an approved organization profile automatically.</p>
+      <div class="grid-3">
+        <article class="panel" aria-labelledby="wf1-h">
+          <h3 id="wf1-h" style="margin-top:0">Initial discovery</h3>
+          <ol class="stepper">
+            <li>Python web collection</li><li>AI extraction</li><li>Evidence validation</li>
+            <li>Organization profile draft</li><li class="gate">Administrator approval</li>
+          </ol>
+        </article>
+        <article class="panel" aria-labelledby="wf2-h">
+          <h3 id="wf2-h" style="margin-top:0">Employee contribution</h3>
+          <ol class="stepper">
+            <li>Multiple uploaded documents</li><li>Compare against approved profile</li>
+            <li>Detect meaningful changes</li><li>Revision draft</li><li class="gate">Administrator approval</li>
+          </ol>
+        </article>
+        <article class="panel" aria-labelledby="wf3-h">
+          <h3 id="wf3-h" style="margin-top:0">Automatic weekly collection</h3>
+          <ol class="stepper">
+            <li>Scheduled web scan</li><li>Detect changes</li>
+            <li>Revision draft only when necessary</li><li class="gate">Administrator approval</li>
+          </ol>
+        </article>
+      </div>
+    </section>
+  </main>
+</div>
+</body>
+</html>

@@ -83,7 +83,9 @@
         badge(r.level === 'warn' ? 'Check' : 'Note', r.level === 'warn' ? 'warn' : 'neutral'), ' ', r.text))),
       el('h3', {class: 'small', text: 'Decision (future)'}),
       el('div', {class: 'outcomes'},
-        futureButton('Shortlist'), futureButton('Approve for outreach'), futureButton('Reject with reason')),
+        futureButton('Shortlist', null, 'innovation_center.matches.review'),
+        futureButton('Approve for outreach', null, 'innovation_center.matches.approve'),
+        futureButton('Reject with reason', null, 'innovation_center.matches.review')),
       el('p', {class: 'small muted', text:
         'No partner will be contacted until Innovation Center and Industry Liaison staff approve ' +
         'the match and the outreach message.'}));

@@ -1,0 +1,167 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="robots" content="noindex, nofollow">
+  <title>User Management · Administrator | Profile Match</title>
+  <link rel="stylesheet" href="/assets/css/style.css">
+  <link rel="stylesheet" href="/assets/css/roles.css">
+  <link rel="stylesheet" href="css/admin.css">
+  <script src="/assets/js/role-switcher.js" defer></script>
+  <script src="/assets/js/session-header.js" defer></script>
+  <script src="js/admin.js" defer></script>
+  <script src="js/navigation.js" defer></script>
+  <script src="js/users.js" defer></script>
+</head>
+<body data-role="administrator" data-auth="pending" data-section="users">
+<a class="skip-link" href="#main">Skip to main content</a>
+<header class="top role-top">
+  <div class="brand">Partner Matching Agent<small id="adminRoleLabel">Administrator</small></div>
+  <div id="roleSwitcher"></div>
+  <div class="account-area">
+    <span id="accountName" class="account-name">Checking account…</span>
+    <button class="btn" id="logoutButton" type="button">Sign out</button>
+  </div>
+</header>
+<div class="dev-banner preview-banner" role="note">
+  <strong>Data not connected.</strong> Not connected to the backend: no user records are
+  loaded, and account changes (roles, suspension, bans, restoration, deletion) are disabled.
+</div>
+<div class="app">
+  <aside class="sidebar" id="adminSidebar">
+    <noscript><p class="small">Navigation needs JavaScript. <a href="overview.html">Overview</a></p></noscript>
+  </aside>
+  <main id="main" class="content adm-content" tabindex="-1">
+    <div class="page-head">
+      <div>
+        <h1>User management</h1>
+        <p class="lead">Find and manage accounts for every actor: innovators, Innovation Center staff,
+          industry liaison, management, external partners and administrators.</p>
+      </div>
+      <span class="preview-tag">User data not connected</span>
+    </div>
+
+    <section aria-labelledby="find-h">
+      <h2 id="find-h" class="sr-only">Find users</h2>
+      <form class="filters" data-filters="userCount" role="search" aria-label="Filter users">
+        <label class="filter grow" for="u-search">Search by name or email
+          <input id="u-search" type="search" autocomplete="off" placeholder="Name or email address">
+        </label>
+        <label class="filter" for="u-role">Role
+          <select id="u-role">
+            <option value="">All roles</option>
+            <option value="administrator">Administrator</option>
+            <option value="admin-employee">Admin Employee</option>
+            <option value="innovator">Innovator</option>
+            <option value="innovation-center">Innovation Center</option>
+            <option value="industry-liaison">Industry Liaison</option>
+            <option value="management">Management</option>
+            <option value="external-partner">External Partner</option>
+          </select>
+        </label>
+        <label class="filter" for="u-status">Account status
+          <select id="u-status">
+            <option value="">All statuses</option>
+            <option value="active">Active</option>
+            <option value="suspended">Suspended</option>
+            <option value="banned">Banned</option>
+            <option value="deleted">Deleted</option>
+          </select>
+        </label>
+        <button class="btn small" type="reset">Clear filters</button>
+      </form>
+      <p id="userCount" class="result-count" role="status"></p>
+    </section>
+
+    <div class="table-host">
+      <table class="data-table">
+        <caption class="sr-only">Users</caption>
+        <thead>
+          <tr><th scope="col">Name</th><th scope="col">Email</th><th scope="col">Roles</th>
+              <th scope="col">Account status</th><th scope="col">Registered</th>
+              <th scope="col">Last activity</th><th scope="col">Actions</th></tr>
+        </thead>
+        <tbody id="userRows"></tbody>
+      </table>
+    </div>
+
+    <section class="panel" style="margin-top:22px" aria-labelledby="detail-h">
+      <div class="page-head">
+        <div>
+          <h2 id="detail-h">User profile details</h2>
+          <p class="small muted" style="margin:0">No user selected. Select a user from the list once
+            user records are connected.</p>
+        </div>
+        <span class="badge tone-neutral">No user selected</span>
+      </div>
+
+      <div data-tabs>
+        <div class="tablist" role="tablist" aria-label="User details">
+          <button type="button" role="tab" id="t-profile" aria-controls="p-profile" aria-selected="true">Profile</button>
+          <button type="button" role="tab" id="t-roles" aria-controls="p-roles" data-requires="roles.manage">Roles</button>
+          <button type="button" role="tab" id="t-status" aria-controls="p-status" data-requires="users.suspend users.ban users.restore users.delete">Account status</button>
+          <button type="button" role="tab" id="t-activity" aria-controls="p-activity">Activity history</button>
+        </div>
+
+        <div role="tabpanel" id="p-profile" aria-labelledby="t-profile">
+          <form data-preview-form="Profile fields checked locally. Saving profiles is not connected — nothing was stored or sent.">
+            <fieldset class="plain" disabled>
+              <legend class="sr-only">Edit profile</legend>
+              <div class="form-grid-2">
+                <label class="form-field" for="p-name">Full name<input id="p-name" type="text" required></label>
+                <label class="form-field" for="p-email">Email address<input id="p-email" type="email" required>
+                  <span class="field-hint">Sign-in email is managed by Google account sign-in.</span></label>
+                <label class="form-field" for="p-org">Organization or department<input id="p-org" type="text"></label>
+                <label class="form-field" for="p-phone">Phone<input id="p-phone" type="tel"></label>
+              </div>
+            </fieldset>
+            <div class="form-actions">
+              <button data-requires="users.edit" data-nc="Editing becomes available when a user is selected and the backend is connected.">Edit profile</button>
+              <button data-requires="users.edit" data-nc>Save changes</button>
+            </div>
+          </form>
+        </div>
+
+        <div role="tabpanel" id="p-roles" aria-labelledby="t-roles" hidden data-requires="roles.manage">
+          <p class="small muted">Assign or remove roles. Admin Employee is a permission-based subrole of the
+            Administrator module.</p>
+          <fieldset class="plain" disabled>
+            <legend>Assigned roles</legend>
+            <ul class="check-list" id="roleChecks"></ul>
+          </fieldset>
+          <div class="form-actions">
+            <button data-nc>Assign selected roles</button>
+            <button data-nc>Remove selected roles</button>
+          </div>
+        </div>
+
+        <div role="tabpanel" id="p-status" aria-labelledby="t-status" hidden data-requires="users.suspend users.ban users.restore users.delete">
+          <dl class="detail-grid">
+            <dt>Current status</dt><dd class="unavailable">Not available</dd>
+            <dt>Status changed</dt><dd class="unavailable">Not available</dd>
+            <dt>Reason</dt><dd class="unavailable">Not available</dd>
+          </dl>
+          <p class="small muted">Each action opens a confirmation dialog. Confirmation is disabled until
+            account actions are connected, so no account is changed.</p>
+          <div class="toolbar" id="accountActions"></div>
+        </div>
+
+        <div role="tabpanel" id="p-activity" aria-labelledby="t-activity" hidden>
+          <div class="table-host">
+            <table class="data-table">
+              <caption class="sr-only">Account activity history</caption>
+              <thead><tr><th scope="col">Timestamp</th><th scope="col">Activity</th>
+                         <th scope="col">Performed by</th><th scope="col">Details</th></tr></thead>
+              <tbody id="activityRows"></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <div id="accountDialogs"></div>
+  </main>
+</div>
+</body>
+</html>

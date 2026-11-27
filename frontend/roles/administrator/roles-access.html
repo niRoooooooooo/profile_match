@@ -1,0 +1,93 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="robots" content="noindex, nofollow">
+  <title>Roles &amp; Access · Administrator | Profile Match</title>
+  <link rel="stylesheet" href="/assets/css/style.css">
+  <link rel="stylesheet" href="/assets/css/roles.css">
+  <link rel="stylesheet" href="css/admin.css">
+  <script src="/assets/js/role-switcher.js" defer></script>
+  <script src="/assets/js/session-header.js" defer></script>
+  <script src="js/admin.js" defer></script>
+  <script src="js/navigation.js" defer></script>
+  <script src="js/permissions.js" defer></script>
+</head>
+<body data-role="administrator" data-auth="pending" data-section="roles">
+<a class="skip-link" href="#main">Skip to main content</a>
+<header class="top role-top">
+  <div class="brand">Partner Matching Agent<small id="adminRoleLabel">Administrator</small></div>
+  <div id="roleSwitcher"></div>
+  <div class="account-area">
+    <span id="accountName" class="account-name">Checking account…</span>
+    <button class="btn" id="logoutButton" type="button">Sign out</button>
+  </div>
+</header>
+<div class="dev-banner preview-banner" role="note">
+  <strong>Data not connected.</strong> Permission changes made here are a local draft in this
+  browser tab only. They are not saved, not assigned to anyone and are lost when the page is closed.
+</div>
+<div class="app">
+  <aside class="sidebar" id="adminSidebar">
+    <noscript><p class="small">Navigation needs JavaScript. <a href="overview.html">Overview</a></p></noscript>
+  </aside>
+  <main id="main" class="content adm-content" tabindex="-1">
+    <div class="page-head">
+      <div>
+        <h1>Roles &amp; access</h1>
+        <p class="lead">Configure what each role can see and do. No permission policy is connected yet,
+          so every permission starts as “Not configured”.</p>
+      </div>
+      <span class="preview-tag">Changes are not saved</span>
+    </div>
+
+    <div class="grid-2">
+      <section class="panel" aria-labelledby="config-h">
+        <h2 id="config-h">Role configuration</h2>
+        <label class="form-field" for="roleSelect">Role
+          <select id="roleSelect"></select>
+        </label>
+        <p id="roleDescription" class="small muted" style="margin:8px 0 0"></p>
+        <fieldset class="plain" style="margin-top:14px">
+          <legend id="permLegend">Permissions</legend>
+          <ul class="check-list" id="permChecks" style="grid-template-columns:1fr"></ul>
+        </fieldset>
+        <p id="draftStatus" class="small" role="status"></p>
+        <div class="form-actions">
+          <button type="button" class="btn small" id="resetRole">Reset this role's draft</button>
+          <button data-nc="Not connected — permissions are not saved or assigned yet.">Save permissions</button>
+        </div>
+      </section>
+
+      <section class="panel" aria-labelledby="about-h">
+        <h2 id="about-h">How access will work</h2>
+        <ul class="small" style="padding-left:20px;margin:0">
+          <li>Permissions will be enforced by the backend, not by this page.</li>
+          <li><strong>Admin Employee</strong> is a permission-based subrole within the Administrator
+            module. An Administrator decides which administrative permissions it receives.</li>
+          <li>Approving organization information always requires the <em>Approving information</em>
+            permission. AI agents never hold it.</li>
+          <li>Every permission change will be recorded in the audit log.</li>
+          <li>The development role switcher changes the interface only. It does not grant any of these
+            permissions.</li>
+        </ul>
+      </section>
+    </div>
+
+    <section aria-labelledby="matrix-h">
+      <h2 id="matrix-h" class="section-title">Permission matrix</h2>
+      <p class="small muted">“—” means not configured. Draft values reflect changes made in the role
+        configuration above and are not saved.</p>
+      <div class="table-host">
+        <table class="data-table matrix keep-table" id="matrix">
+          <caption class="sr-only">Permissions by role (local draft)</caption>
+          <thead id="matrixHead"></thead>
+          <tbody id="matrixBody"></tbody>
+        </table>
+      </div>
+    </section>
+  </main>
+</div>
+</body>
+</html>

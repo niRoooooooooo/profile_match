@@ -21,6 +21,31 @@
     return node;
   }
 
+  // Access computed by the SERVER for this page (data-interface-* on <body>).
+  // It only hides what the server refuses anyway; it never grants anything.
+  // Opened from disk (offline UI tests) there is no server, so the full
+  // fictional preview is shown. Served over HTTP without the attributes:
+  // nothing is allowed (fail closed).
+  const OFFLINE = location.protocol === 'file:';
+  const words = name => new Set((document.body.dataset[name] || '').split(' ').filter(Boolean));
+  const can = permission => OFFLINE || words('interfacePermissions').has(permission);
+  const canOpen = pageFile => OFFLINE || words('interfacePages').has(pageFile);
+  const PAGE_FILES = ['overview.html', 'profile-approvals.html', 'portfolio.html', 'match-review.html'];
+
+  // Links to pages this account may not open: navigation entries are removed,
+  // links inside content become plain text.
+  function applyPageAccess(root) {
+    for (const link of root.querySelectorAll('a[href]')) {
+      const file = (link.getAttribute('href') || '').split(/[?#]/)[0];
+      if (!PAGE_FILES.includes(file) || canOpen(file)) continue;
+      if (link.closest('.ic-nav, .quick-links')) link.remove();
+      else link.replaceWith(el('span', {text: link.textContent}));
+    }
+    for (const nav of root.querySelectorAll('.quick-links')) {
+      if (!nav.querySelector('a')) nav.remove();
+    }
+  }
+
   function demoLabel(extra) {
     return el('p', {class: 'demo-label'},
       el('span', {class: 'demo-tag', text: 'Illustrative demo data'}),
@@ -28,8 +53,11 @@
   }
 
   // Visible-but-disabled control for functionality that does not exist yet.
+  // With `permission`, it is not shown at all to accounts without it (for
+  // example Head-only decisions for Employees).
   let futureCount = 0;
-  function futureButton(label, explanation) {
+  function futureButton(label, explanation, permission) {
+    if (permission && !can(permission)) return null;
     const id = 'future-note-' + (++futureCount);
     return el('span', {class: 'future-control'},
       el('button', {type: 'button', class: 'btn', disabled: true,
@@ -61,6 +89,7 @@
       const main = document.getElementById('main');
       main.replaceChildren();
       render(main);
+      applyPageAccess(document);
       const heading = main.querySelector('h1');
       if (heading) {
         heading.setAttribute('tabindex', '-1');
@@ -98,6 +127,7 @@
              'Readiness (TRL) levels', 'Matching opportunities by domain']}];
 
   function trendsPlaceholders() {
+    if (!can('innovation_center.reports.view')) return null;
     return el('section', {class: 'trends', 'aria-labelledby': 'trends-h'},
       el('h2', {id: 'trends-h', class: 'section-title', text: 'Trends & reports'}),
       el('div', {class: 'trends-grid'}, TRENDS.map(t => el('article', {
@@ -121,5 +151,5 @@
   }
 
   window.ICShell = {el, demoLabel, futureButton, badge, formatDate, trl, param, page,
-                    criteriaTable, trendsPlaceholders, notAvailable};
+                    criteriaTable, trendsPlaceholders, notAvailable, can, canOpen};
 })();
